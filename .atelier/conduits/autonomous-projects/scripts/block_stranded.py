@@ -16,14 +16,23 @@ single "blocked: none" when nothing was stranded:
 from __future__ import annotations
 
 import datetime as _dt
+import re
 import sys
 from pathlib import Path
 
 
-def block_stranded(project_dir: str | Path) -> list[str]:
+def _extract_reason(text: str | None) -> str | None:
+    """Pull the reviewer's last `REASON:` line from a verdict blob (None if absent)."""
+    matches = re.findall(r"^\s*REASON:\s*(.+?)\s*$", text or "", re.MULTILINE)
+    return matches[-1].strip() if matches and matches[-1].strip() else None
+
+
+def block_stranded(project_dir: str | Path, reason: str | None = None) -> list[str]:
     """Move every *.md left in 02_in-progress/ to 05_blocked/, each with a note.
 
     :param project_dir: project folder holding the numbered stage subfolders.
+    :param reason: the reviewer's last one-line reason, appended to the note when
+        present; falls back to the plain note when None (crash/timeout, no verdict).
     :returns: destination paths as strings; empty list if nothing was stranded.
     """
     project = Path(project_dir)
@@ -43,6 +52,8 @@ def block_stranded(project_dir: str | Path) -> list[str]:
         f"Auto-blocked {stamp}: the work-and-review loop ended without a DONE "
         f"verdict (retry cap hit, or the run was cut off). Needs a human.\n"
     )
+    if reason:
+        note += f"\nLast reviewer feedback: {reason}\n"
 
     moved: list[str] = []
     for src in stranded:
@@ -64,7 +75,8 @@ def block_stranded(project_dir: str | Path) -> list[str]:
 
 def main() -> None:
     project_dir = sys.argv[1] if len(sys.argv) > 1 else ""
-    moved = block_stranded(project_dir)
+    raw = "" if sys.stdin.isatty() else sys.stdin.read()
+    moved = block_stranded(project_dir, _extract_reason(raw))
     for dest in moved:
         print(f"blocked: {dest}")
     if not moved:

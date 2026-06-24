@@ -141,7 +141,10 @@ tasks:
       depends_on:
         - 'advance.output.not_match(VERDICT:\s*DONE)'
       task: |
-        python3 "{{conduit_dir}}/../autonomous-projects/scripts/block_stranded.py" "{{inputs.project_dir}}"
+        # reviewer verdict piped on stdin; quoted heredoc = no shell expansion of its REASON text
+        python3 "{{conduit_dir}}/../autonomous-projects/scripts/block_stranded.py" "{{inputs.project_dir}}" <<'ATELIER_REVIEW_EOF'
+        {{advance.output}}
+        ATELIER_REVIEW_EOF
 
   - bump:
       description: "Advance the per-tick counter (made: N) so the parent loop stops at target."

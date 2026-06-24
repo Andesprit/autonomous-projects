@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from block_stranded import block_stranded
+from block_stranded import _extract_reason, block_stranded
 
 
 def _project(tmp_path):
@@ -69,6 +69,28 @@ def test_missing_in_progress_dir_no_crash(tmp_path):
     proj = tmp_path / "bare"
     proj.mkdir()
     assert block_stranded(proj) == []
+
+
+def test_reason_appended_to_note(tmp_path):
+    proj = _project(tmp_path)
+    src = proj / "02_in-progress" / "task_x.md"
+    src.write_text("# Description\nwork\n", encoding="utf-8")
+    moved = block_stranded(proj, "tests still red on the new parser")
+    body = Path(moved[0]).read_text(encoding="utf-8")
+    assert "# Blocked" in body
+    assert "Last reviewer feedback: tests still red on the new parser" in body
+
+
+def test_extract_reason(tmp_path):
+    assert (
+        _extract_reason("VERDICT: NOT_DONE\nREASON: didn't address the X constraint")
+        == "didn't address the X constraint"
+    )
+    assert _extract_reason("no verdict here") is None
+    assert _extract_reason("") is None
+    assert _extract_reason("REASON:   \n") is None  # blank reason -> generic note
+    multi = "REASON: first try failed\nVERDICT: NOT_DONE\nREASON: last try failed"
+    assert _extract_reason(multi) == "last try failed"
 
 
 if __name__ == "__main__":
