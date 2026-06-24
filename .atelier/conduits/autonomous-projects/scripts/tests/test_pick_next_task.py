@@ -43,6 +43,14 @@ def test_pick_next_task() -> None:
         _write(to_do, "five.md", "5")
         assert pick_next_task(d) == "five.md"
 
+        # the template ships `priority:  # note` (commented but unfilled) -> the
+        # trailing comment fails int() -> sorts last, same as a blank line
+        for p in to_do.glob("*.md"):
+            p.unlink()
+        _write(to_do, "commented.md", " # lower number = worked sooner")
+        _write(to_do, "five.md", "5")
+        assert pick_next_task(d) == "five.md"
+
         # empty 01_to-do/ -> empty output
         for p in to_do.glob("*.md"):
             p.unlink()
