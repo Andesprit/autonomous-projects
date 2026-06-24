@@ -125,8 +125,9 @@ atelier list conduits        # autonomous-projects should appear
 [`uv`](https://docs.astral.sh/uv/) (the counter and usage check are plain
 stdlib `python3`); `usage.mjs` needs Node 22+ (`node:sqlite`). The
 work/review/idea steps drive **Claude Code**. The first task in every tick
-(`dep_guard`) fails fast with a clear message if `uv` or the `claude` CLI is
-missing from `PATH`, so a missing tool surfaces immediately instead of mid-run.
+(`dep_guard`) fails fast with a clear message if `uv`, the `claude` CLI,
+`python3`, or `node` is missing from `PATH`, so a missing tool surfaces
+immediately instead of mid-run.
 
 ---
 
@@ -243,10 +244,12 @@ dep_guard ─┬─▶ counts ───────────────┐
 ```
 
 ### 0. `dep_guard`
-The DAG root. Fails fast (with a named, actionable message) if `uv` or the
-`claude` CLI is missing from `PATH` — every activity runs on Claude Code — so a
-missing tool stops the tick cleanly instead of crashing a branch deep in the
-run.
+The DAG root. Fails fast (with a named, actionable message) if `uv`, the
+`claude` CLI, `python3`, or `node` is missing from `PATH` — every activity runs
+on Claude Code, and `node` is what makes the `max_usage` gate real (`usage.mjs`
+runs under it; without `node` the usage read silently fails open and the ceiling
+is never enforced) — so a missing tool stops the tick cleanly instead of
+crashing a branch deep in the run.
 
 ### 1. `counts` — what to run this tick
 You tell each tick how much of each activity to do with `--input n_ideas=…`,

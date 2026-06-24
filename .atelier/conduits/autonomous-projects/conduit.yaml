@@ -23,7 +23,7 @@ inputs:
 
 tasks:
   - dep_guard:
-      description: Fail fast if uv, the claude CLI, or python3 is missing from PATH.
+      description: Fail fast if uv, the claude CLI, python3, or node is missing from PATH.
       tool: tool:bash
       depends_on: []
       task: |
@@ -35,6 +35,8 @@ tasks:
           || missing+=("claude (harness:claude-code) — must be on PATH")
         command -v python3 >/dev/null 2>&1 \
           || missing+=("python3 — must be on PATH (runs usage checks + per-tick counters)")
+        command -v node >/dev/null 2>&1 \
+          || missing+=("node 22+ (powers usage.mjs / the max_usage gate) — install: https://nodejs.org")
         if ((${#missing[@]})); then
           printf 'missing dependency: %s\n' "${missing[@]}" | sort -u >&2
           exit 1
