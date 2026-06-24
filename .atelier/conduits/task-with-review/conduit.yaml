@@ -50,13 +50,26 @@ tasks:
         the builder recorded that honestly rather than claiming a pass; a DONE
         verdict is never allowed on the builder's self-reported test result alone.
 
-        Judge two things, not one:
+        Judge three things, not one:
         1. Completion — was the work actually done, not just claimed?
         2. Alignment — does the work serve the task's stated goal and respect
            every constraint the task names? Well-executed work that drifts from
            the goal, violates a stated constraint, or builds further on a
            decision the task says is unresolved is NOT done.
-        Return NOT_DONE if either check fails, and say which in the reason.
+        3. House rules — the original task above names the project markdown file
+           (`The project markdown file is at: <path>`). Open that file, read its
+           `# Constraints` section, and treat those constraints as the project's
+           binding house rules — the same standard the builder was held to, not
+           optional. Work that violates a house rule is NOT_DONE even if the
+           specific task was technically completed — e.g. reintroducing a design
+           the project deliberately retired, or making a sweeping change when a
+           rule says keep changes small and surgical. Guard against
+           over-correcting: only fail for a genuine violation you can name; do
+           not bounce good work over wording, style preference, or a constraint
+           that doesn't apply to this task's diff — when in doubt, it is not a
+           violation. If the task names no project markdown file, or that file
+           has no `# Constraints` section, skip this check.
+        Return NOT_DONE if any check fails, and say which in the reason.
 
         Respond with exactly two lines, nothing else:
         VERDICT: DONE
