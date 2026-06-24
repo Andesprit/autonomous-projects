@@ -54,7 +54,10 @@ def create_project(repo: Path, template_path: Path) -> Path:
     tmp_dir = Path(tempfile.mkdtemp(dir=target.parent))
     try:
         for folder in STAGE_FOLDERS:
-            (tmp_dir / folder).mkdir(parents=True)
+            d = tmp_dir / folder
+            d.mkdir(parents=True)
+            # ponytail: .gitkeep so git tracks the empty lane; survives commit/clone
+            (d / ".gitkeep").write_text("", encoding="utf-8")
         (tmp_dir / "project.md").write_text(
             template_path.read_text(encoding="utf-8"), encoding="utf-8"
         )

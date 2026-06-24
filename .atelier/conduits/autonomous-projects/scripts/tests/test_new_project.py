@@ -38,6 +38,7 @@ def test_happy_path(tmp_path):
     assert result.is_dir()
     for folder in STAGE_FOLDERS:
         assert (result / folder).is_dir()
+        assert (result / folder / ".gitkeep").is_file()
 
     project_md = result / "project.md"
     assert project_md.is_file()
