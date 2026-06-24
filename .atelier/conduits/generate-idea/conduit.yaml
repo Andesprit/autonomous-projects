@@ -8,7 +8,7 @@ inputs:
   template_dir: "Directory holding task_template.md (threaded from the parent conduit)."
   path_idea: "Folder holding prior idea_*.md (and queued task_*/review_*) documents; the new idea_*.md is written here."
   bad_ideas: "Folder of rejected-idea files the agent must read to avoid re-proposing them."
-  tasks_dir: "Project root whose 01_to-do/02_in-progress/03_to-review/04_done subfolders the agent reads for prior work."
+  tasks_dir: "Project root whose 01_to-do/02_in-progress/03_to-review/04_done/05_blocked subfolders the agent reads for prior work."
   target: "How many ideas the parent wants this tick (the n_ideas count)."
   prior: "The previous iteration's counter output ({{loop.previous}}); empty on iteration 1."
 
@@ -47,10 +47,15 @@ tasks:
           Do NOT propose ideas of those kinds; respect the stated reasoning.
         - Existing tasks live under this directory: {{inputs.tasks_dir}}
           Read the .md files in its `01_to-do/`, `02_in-progress/`, `03_to-review/`,
-          and `04_done/` subfolders — their `# Description` sections describe work
-          already queued, being worked, implemented and awaiting review, or
-          completed (`# What was done` records the result for finished tasks).
-          Your new idea MUST NOT duplicate any of them.
+          `04_done/`, and `05_blocked/` subfolders — their `# Description` sections
+          describe work already queued, being worked, implemented and awaiting
+          review, completed (`# What was done` records the result for finished
+          tasks), or attempted-but-stuck (`05_blocked/` holds tasks the loop tried
+          and could not finish, parked for a human). Your new idea MUST NOT
+          duplicate any of them, including the blocked ones. Note: blocked is NOT
+          the same as rejected — a blocked task may still be wanted once a human
+          unblocks it, so the rule is only "don't re-propose it as new," not
+          "never do this work."
         If a path is empty or the folder does not exist, treat it as "no prior
         ideas/tasks" and continue.
 
