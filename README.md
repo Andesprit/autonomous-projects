@@ -461,11 +461,13 @@ atelier scheduler start      # foreground daemon; Ctrl+C to stop
 ```
 
 To drive several repos, add one schedule per repo, each with its own
-`project_root`. Overnight, each tick advances its repo's project: tops up the
-backlog with the ideas and reviews you asked for, improves any raw tasks you
-dropped, and advances up to `n_todo` approved to-do tasks through the two-agent
-DONE loop — skipping any activity whose harness is over your usage ceiling. You
-wake up to a triaged backlog and reviewed diffs waiting for your yes.
+`project_root` (and, if you wrap ticks in `tick_lock.py`, its own
+`--lock-file` — see Single-flight below). Overnight, each tick advances its
+repo's project: tops up the backlog with the ideas and reviews you asked for,
+improves any raw tasks you dropped, and advances up to `n_todo` approved to-do
+tasks through the two-agent DONE loop — skipping any activity whose harness is
+over your usage ceiling. You wake up to a triaged backlog and reviewed diffs
+waiting for your yes.
 
 **Single-flight (cron / custom timers).** A tick may run up to 2h, so on a
 30-min interval a slow tick can still be working when the next fires — two runs
@@ -473,9 +475,17 @@ then race over the same project files. Wrap the invocation in `tick_lock.py` so
 the second run prints a skip note and exits instead:
 
 ```bash
+# one lock per repo: co-locate it with the repo it guards
 python3 .atelier/conduits/autonomous-projects/scripts/tick_lock.py \
+  --lock-file /abs/path/to/your/repo/.autonomous-projects.lock \
   atelier run autonomous-projects --input project_root=/abs/path/to/your/repo
 ```
+
+Use a distinct `--lock-file` per repo. Without it the lock defaults to
+`<cwd>/.autonomous-projects.lock`, so several repos launched from the same
+directory share one lock — the first grabs it and the rest print "a tick is
+already running, skipping this one" and exit without working. They don't fail
+or warn, so the only symptom is repos that sat still all night.
 
 It takes an OS advisory lock for the whole run; the kernel releases it if the
 run crashes or is killed, so a dead run never jams the loop.
