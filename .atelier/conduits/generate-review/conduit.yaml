@@ -6,7 +6,7 @@ max_concurrency: 1
 inputs:
   project_document: Path to the project document (goal/constraints/context) the agent reads.
   template_dir: "Directory holding task_template.md (threaded from the parent conduit)."
-  path_review: "Folder holding prior review_*.md documents; the new review_*.md is written here."
+  path_review: "Folder holding prior review_*.md (and queued idea_*/task_*) documents; the new review_*.md is written here."
   bad_ideas: "Folder of rejected-idea files the agent must read to avoid re-recommending them."
   tasks_dir: "Project root whose 01_to-do/02_in-progress/03_to-review/04_done/05_blocked subfolders the agent reads for prior work."
   target: "How many reviews the parent wants this tick (the n_reviews count)."
@@ -37,9 +37,12 @@ tasks:
         Then focus on the codebase at the path outlined in the project document
 
         Before reviewing, read prior context so you don't repeat work:
-        - Existing reviews live in this folder: {{inputs.path_review}}
-          Read the review_*.md files there. Your new review MUST cover different
-          ground, not restate findings already captured.
+        - Existing proposals live in this folder: {{inputs.path_review}}
+          Read the review_*.md files there. Also read the idea_*.md and
+          task_*.md files in the same folder — those are already-written-up
+          proposals waiting to be promoted. Your new review MUST cover
+          different ground: do not restate a finding already captured in any
+          review, idea, or task there.
         - Rejected ideas live in this folder: {{inputs.bad_ideas}}
           Each file holds a bad idea and the user's reasoning for why it is bad.
           Do NOT recommend changes of those kinds; respect the stated reasoning.
