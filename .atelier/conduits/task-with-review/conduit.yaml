@@ -11,6 +11,8 @@ tasks:
       description: Execute the task with a coding agent
       tool: harness:claude-code
       depends_on: []
+      retries: 2
+      retry_backoff: 5
       task: |
         /build
 
@@ -26,6 +28,8 @@ tasks:
       tool: harness:claude-code
       depends_on:
         - do_task.output.not_match(^\s*NOTHING TO DO)
+      retries: 2
+      retry_backoff: 5
       task: |
         You are reviewing whether a task was actually completed.
 
