@@ -43,10 +43,28 @@ tasks:
         fi
         printf 'deps ok\n'
 
+  - project_guard:
+      description: Fail fast if project_root isn't a scaffolded project (no .atelier/project/project.md).
+      tool: tool:bash
+      depends_on: [dep_guard]
+      task: |
+        set -euo pipefail
+        pm="{{inputs.project_root}}/.atelier/project/project.md"
+        if [[ ! -f "$pm" ]]; then
+          {
+            echo "not a project: no project.md at $pm"
+            echo "If the path is wrong, fix --input project_root."
+            echo "Otherwise scaffold it first:"
+            echo "  atelier run new-project --input project_root={{inputs.project_root}}"
+          } >&2
+          exit 1
+        fi
+        printf 'project ok\n'
+
   - counts:
       description: "Echo the per-tick counts so each branch can gate on n_* > 0 (depends_on can't read inputs directly)."
       tool: tool:bash
-      depends_on: [dep_guard]
+      depends_on: [project_guard]
       task: |
         printf 'n_ideas: %s\nn_reviews: %s\nn_improve: %s\nn_todo: %s\n' \
           "{{inputs.n_ideas}}" "{{inputs.n_reviews}}" "{{inputs.n_improve}}" "{{inputs.n_todo}}"

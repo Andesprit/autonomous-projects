@@ -127,7 +127,10 @@ stdlib `python3`); `usage.mjs` needs Node 22+ (`node:sqlite`). The
 work/review/idea steps drive **Claude Code**. The first task in every tick
 (`dep_guard`) fails fast with a clear message if `uv`, the `claude` CLI,
 `python3`, or `node` is missing from `PATH`, so a missing tool surfaces
-immediately instead of mid-run.
+immediately instead of mid-run. The next task (`project_guard`) likewise fails
+fast if `project_root` isn't a scaffolded project (no `.atelier/project/project.md`),
+so a wrong path or a forgotten scaffold step stops the tick cleanly instead of
+crashing deep in a sub-conduit.
 
 ---
 
@@ -235,12 +238,12 @@ Each `atelier run autonomous-projects` is one **tick**. A tick is a small DAG of
 tasks (see `.atelier/conduits/autonomous-projects/conduit.yaml`):
 
 ```
-dep_guard ─┬─▶ counts ───────────────┐
-           ├─▶ usage_ideas           │
-           ├─▶ usage_reviews         ├─▶ generate_ideas   (n_ideas>0   ∧ usage_ideas ok)
-           ├─▶ usage_improve         ├─▶ generate_reviews (n_reviews>0 ∧ usage_reviews ok)
-           └─▶ usage_todo            ├─▶ improve_tasks    (n_improve>0 ∧ usage_improve ok)
-                                     └─▶ do_tasks         (n_todo>0    ∧ usage_todo ok)
+dep_guard ─▶ project_guard ─┬─▶ counts ───────────────┐
+                            ├─▶ usage_ideas           │
+                            ├─▶ usage_reviews         ├─▶ generate_ideas   (n_ideas>0   ∧ usage_ideas ok)
+                            ├─▶ usage_improve         ├─▶ generate_reviews (n_reviews>0 ∧ usage_reviews ok)
+                            └─▶ usage_todo            ├─▶ improve_tasks    (n_improve>0 ∧ usage_improve ok)
+                                                      └─▶ do_tasks         (n_todo>0    ∧ usage_todo ok)
 ```
 
 ### 0. `dep_guard`
@@ -250,6 +253,21 @@ on Claude Code, and `node` is what makes the `max_usage` gate real (`usage.mjs`
 runs under it; without `node` the usage read silently fails open and the ceiling
 is never enforced) — so a missing tool stops the tick cleanly instead of
 crashing a branch deep in the run.
+
+### 0.5 `project_guard`
+Runs right after `dep_guard`, before any work. Fails fast if `project_root`
+isn't a scaffolded project — i.e. there's no `.atelier/project/project.md` where
+one should be. This catches the common mistakes of forgetting to scaffold,
+mistyping `project_root`, or aiming at the wrong repo, instead of letting the
+tick sail past and die deep in a sub-conduit. The message names both failure
+modes and prints the exact scaffold command:
+
+```
+not a project: no project.md at <path>/.atelier/project/project.md
+If the path is wrong, fix --input project_root.
+Otherwise scaffold it first:
+  atelier run new-project --input project_root=<path>
+```
 
 ### 1. `counts` — what to run this tick
 You tell each tick how much of each activity to do with `--input n_ideas=…`,
