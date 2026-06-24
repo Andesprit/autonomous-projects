@@ -142,10 +142,14 @@ tasks:
 
         3. Determine the slug from the "REVIEW_SLUG:" line in the review below.
 
-        4. Run: mkdir -p "{{inputs.path_review}}"
-           Then write the filled document to:
-           {{inputs.path_review}}/review_<slug>.md
+        4. Compute the destination path by running:
+           python3 "{{conduit_dir}}/../autonomous-projects/scripts/unique_path.py" "{{inputs.path_review}}" "review_<slug>.md"
            (literal prefix "review_" followed by the slug, e.g. review_auth-module.md).
+           It creates the folder and prints one absolute path that does not
+           collide with any existing file (if review_<slug>.md is taken it
+           returns review_<slug>.2.md, etc., so an earlier proposal is never
+           overwritten).
+           Write the filled document to EXACTLY the path it printed.
 
         Review:
         ---

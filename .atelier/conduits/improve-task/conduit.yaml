@@ -146,10 +146,13 @@ tasks:
 
         3. Determine the slug from the "TASK_SLUG:" line in the task below.
 
-        4. Run: mkdir -p "{{inputs.path_backlog}}"
-           Then write the filled document to:
-           {{inputs.path_backlog}}/task_<slug>.md
+        4. Compute the destination path by running:
+           python3 "{{conduit_dir}}/../autonomous-projects/scripts/unique_path.py" "{{inputs.path_backlog}}" "task_<slug>.md"
            (literal prefix "task_" followed by the slug, e.g. task_dark-mode.md).
+           It creates the folder and prints one absolute path that does not
+           collide with any existing file (if task_<slug>.md is taken it returns
+           task_<slug>.2.md, etc., so an earlier proposal is never overwritten).
+           Write the filled document to EXACTLY the path it printed.
            A later automated step removes the source inbox file — do not delete
            it here.
 
