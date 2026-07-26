@@ -10,6 +10,7 @@ inputs:
   path_backlog: "Target folder where the improved task_*.md documents are written."
   target: "How many tasks the parent wants spec'd this tick (the n_improve count)."
   prior: "The previous iteration's counter output ({{loop.previous}}); empty on iteration 1."
+  max_usage: {default: "80"}   # usage ceiling %; the per-iteration re-check stops the loop when the harness is at/over it
 
 tasks:
   - count:
@@ -18,7 +19,8 @@ tasks:
       depends_on: []
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
-          --phase count --target "{{inputs.target}}" --prior "{{inputs.prior}}"
+          --phase count --target "{{inputs.target}}" --prior "{{inputs.prior}}" \
+          --conduit improve-task --max-usage "{{inputs.max_usage}}"
 
   - pick_task:
       description: "Deterministically select one .md file from the inbox; emit its absolute path on line 1, then the raw file contents."
@@ -44,7 +46,14 @@ tasks:
       retries: 2
       retry_backoff: 5
       task: |
-        /spec
+        /agent-skills:spec
+
+        This run is unattended: NEVER ask a clarifying question and never wait
+        for confirmation — make reasonable assumptions from the project
+        document and the codebase, and record any open question inside the
+        spec text itself. Write NO files: do not create `SPEC.md`,
+        `docs/SPEC.md`, or anything under `spec/`. The spec goes between the
+        markers below and nowhere else; the conduit stores it.
 
         Read this project document first to understand the project's goal and
         constraints, and ground your improvements in it:
@@ -87,7 +96,13 @@ tasks:
       retries: 2
       retry_backoff: 5
       task: |
-        /plan
+        /agent-skills:plan
+
+        Plan against the codebase that holds this project document —
+        {{inputs.project_document}} — that is, the repo containing its
+        `.atelier/project/` folder. Read the document first for the goal and
+        the binding constraints. Do NOT plan against the current working
+        directory: the tick may have been launched from anywhere.
 
         Create a plan for the following task (use only the text between the
         "===TASK START===" / "===TASK END===" markers; ignore everything else):
@@ -97,7 +112,8 @@ tasks:
         ---
 
         IMPORTANT: Output the full plan inline in your response only. Do NOT write
-        the plan to any file on disk.
+        the plan to any file on disk — no `tasks/plan.md`, no `tasks/todo.md`,
+        no file of any other name. The conduit stores the plan itself.
 
         Output format (strict):
         - Do all reasoning first; NONE of that narration may appear in the plan.
@@ -130,9 +146,14 @@ tasks:
              everything AFTER the first line of {{pick_task.output}}. Copy it as
              written; do NOT reconstruct it from the improved spec.
            - "# Spec": ONLY the text between the "===TASK START===" and
-             "===TASK END===" markers in the task below. Discard everything
-             outside the markers (model narration, the markers themselves, and
-             the TASK_SLUG line).
+             "===TASK END===" markers in the task below. Strip a leading
+             top-level "# ..." heading if present (the template already
+             provides "# Spec"), and demote any other top-level "# " headings
+             inside it to "## " so they don't read as document sections —
+             but ONLY outside fenced code blocks: a "#" starting a line
+             inside ``` fences is a code comment, leave it exactly as is.
+             Discard everything outside the markers (model narration, the
+             markers themselves, and the TASK_SLUG line).
            - "# Plan": ONLY the text between the "===PLAN START===" and
              "===PLAN END===" markers in the plan below. Strip a leading
              top-level "# ..." heading if present (the template already provides

@@ -6,39 +6,63 @@ description: >
   numbered stage folders (00_backlog, 00_tasks, 00_abandoned holds rejected
   ideas, 01_to-do, 02_in-progress, 03_to-review, 04_done; 05_blocked holds
   tasks the review loop gave up on, awaiting a human). You say how many of each activity to
-  run this tick (n_ideas/n_reviews/n_improve/n_todo); the only gate is a usage
-  ceiling (max_usage) read from each activity's harness. An activity is skipped
-  when its n_* is 0 or its harness is at/over max_usage.
+  run this tick (n_ideas/n_adhd/n_reviews/n_improve/n_todo); the only gate is a
+  usage ceiling (max_usage) read from each activity's harness. An activity is
+  skipped when its n_* is 0 or its harness is at/over max_usage.
 
-timeout: 7200
-max_concurrency: 1
+timeout: 21600
+# 3 = the three proposal branches (ideas, adhd ideas, reviews) run at the same
+# time; they share no state and write distinct filename prefixes. improve_tasks
+# and do_tasks are declared last, so they take slots as the proposal branches
+# finish rather than racing the builder against a fresh ideation read.
+max_concurrency: 3
 
 inputs:
   project_root: "Absolute path to the target repo holding .atelier/project/ (required); the codebase workers edit."
-  n_ideas: {default: "0"}      # ideas to generate this tick (0 = skip)
-  n_reviews: {default: "0"}    # reviews to generate this tick
+  n_ideas: {default: "10"}     # straightforward ideas to generate this tick (0 = skip)
+  n_adhd: {default: "3"}       # divergent (adhd skill) ideas this tick; ~10 agent calls each
+  n_reviews: {default: "5"}    # reviews to generate this tick
   n_improve: {default: "0"}    # raw tasks to spec from 00_tasks/ this tick
   n_todo: {default: "0"}       # to-do tasks to advance this tick
   max_usage: {default: "80"}   # usage ceiling %; an activity is skipped if its harness is at/over this
 
 tasks:
   - dep_guard:
-      description: Fail fast if uv, the claude CLI, or python3 is missing from PATH.
+      description: >
+        Fail fast on a missing hard dependency (python3, npx, claude), and warn
+        about the soft ones (node, the two skill sets) rather than blocking —
+        those degrade a step, they don't break the tick.
       tool: tool:bash
       depends_on: []
       task: |
         set -euo pipefail
         missing=()
-        command -v uv >/dev/null 2>&1 \
-          || missing+=("uv — install: curl -LsSf https://astral.sh/uv/install.sh | sh")
+        # Hard: every AI step launches the ACP agent through npx, every helper
+        # script runs on python3, and the ACP agent drives the claude CLI.
+        command -v python3 >/dev/null 2>&1 \
+          || missing+=("python3 — must be on PATH (runs the counters, usage gate and pickers)")
+        command -v npx >/dev/null 2>&1 \
+          || missing+=("npx (Node) — harness:claude-code launches @agentclientprotocol/claude-agent-acp through it")
         command -v claude >/dev/null 2>&1 \
           || missing+=("claude (harness:claude-code) — must be on PATH")
-        command -v python3 >/dev/null 2>&1 \
-          || missing+=("python3 — must be on PATH (runs usage checks + per-tick counters)")
         if ((${#missing[@]})); then
           printf 'missing dependency: %s\n' "${missing[@]}" | sort -u >&2
           exit 1
         fi
+
+        # Soft: each of these degrades one thing and is worth saying out loud.
+        # (`uv` is deliberately NOT required — no conduit runs it; it only
+        # matters if your project's own test_command does.)
+        warn() { printf 'warning: %s\n' "$1" >&2; }
+        command -v node >/dev/null 2>&1 \
+          || warn "node missing — scripts/usage.mjs can't read 5h usage, so max_usage won't throttle anything (fails open)"
+        ls -d "$HOME"/.claude/plugins/cache/*/agent-skills/* >/dev/null 2>&1 \
+          || warn "addyosmani/agent-skills plugin not found — /agent-skills:spec|plan|review|build won't resolve; see the README Install step"
+        { [ -f "$HOME/.claude/skills/adhd/SKILL.md" ] \
+          || ls -d "$HOME"/.claude/plugins/cache/*/adhd >/dev/null 2>&1 \
+          || [ -f ".claude/skills/adhd/SKILL.md" ]; } \
+          || warn "adhd skill not found — the n_adhd branch degrades to a single-shot idea; npx skills add UditAkhourii/adhd"
+
         printf 'deps ok\n'
 
   - counts:
@@ -46,8 +70,9 @@ tasks:
       tool: tool:bash
       depends_on: [dep_guard]
       task: |
-        printf 'n_ideas: %s\nn_reviews: %s\nn_improve: %s\nn_todo: %s\n' \
-          "{{inputs.n_ideas}}" "{{inputs.n_reviews}}" "{{inputs.n_improve}}" "{{inputs.n_todo}}"
+        printf 'n_ideas: %s\nn_adhd: %s\nn_reviews: %s\nn_improve: %s\nn_todo: %s\n' \
+          "{{inputs.n_ideas}}" "{{inputs.n_adhd}}" "{{inputs.n_reviews}}" \
+          "{{inputs.n_improve}}" "{{inputs.n_todo}}"
 
   - usage_ideas:
       description: "ok: true if generate-idea's harness is under max_usage (fail-open)."
@@ -55,6 +80,13 @@ tasks:
       depends_on: ['counts.output.match(n_ideas:\s*[1-9])']
       task: |
         python3 {{conduit_dir}}/scripts/usage_check.py --conduit generate-idea --max-usage "{{inputs.max_usage}}"
+
+  - usage_adhd:
+      description: "ok: true if generate-adhd-idea's harness is under max_usage (fail-open)."
+      tool: tool:bash
+      depends_on: ['counts.output.match(n_adhd:\s*[1-9])']
+      task: |
+        python3 {{conduit_dir}}/scripts/usage_check.py --conduit generate-adhd-idea --max-usage "{{inputs.max_usage}}"
 
   - usage_reviews:
       description: "ok: true if generate-review's harness is under max_usage (fail-open)."
@@ -89,6 +121,26 @@ tasks:
       inputs:
         target: "{{inputs.n_ideas}}"
         prior: "{{loop.previous}}"
+        max_usage: "{{inputs.max_usage}}"
+        project_document: "{{inputs.project_root}}/.atelier/project/project.md"
+        template_dir: "{{conduit_dir}}/references"
+        path_idea: "{{inputs.project_root}}/.atelier/project/00_backlog"
+        bad_ideas: "{{inputs.project_root}}/.atelier/project/00_abandoned"
+        tasks_dir: "{{inputs.project_root}}/.atelier/project"
+
+  - generate_adhd_ideas:
+      description: Generate up to n_adhd divergent (adhd) ideas into the project's 00_backlog/ folder.
+      tool: tool:conduit
+      task: generate-adhd-idea
+      depends_on:
+        - 'counts.output.match(n_adhd:\s*[1-9])'
+        - 'usage_adhd.output.match(ok:\s*true)'
+      repeat: 50  # literal safety ceiling; the sub-conduit's counter stops at n_adhd
+      until: 'output.match(remaining:\s*0)'
+      inputs:
+        target: "{{inputs.n_adhd}}"
+        prior: "{{loop.previous}}"
+        max_usage: "{{inputs.max_usage}}"
         project_document: "{{inputs.project_root}}/.atelier/project/project.md"
         template_dir: "{{conduit_dir}}/references"
         path_idea: "{{inputs.project_root}}/.atelier/project/00_backlog"
@@ -107,6 +159,7 @@ tasks:
       inputs:
         target: "{{inputs.n_reviews}}"
         prior: "{{loop.previous}}"
+        max_usage: "{{inputs.max_usage}}"
         project_document: "{{inputs.project_root}}/.atelier/project/project.md"
         template_dir: "{{conduit_dir}}/references"
         path_review: "{{inputs.project_root}}/.atelier/project/00_backlog"
@@ -125,6 +178,7 @@ tasks:
       inputs:
         target: "{{inputs.n_improve}}"
         prior: "{{loop.previous}}"
+        max_usage: "{{inputs.max_usage}}"
         project_document: "{{inputs.project_root}}/.atelier/project/project.md"
         template_dir: "{{conduit_dir}}/references"
         path_task: "{{inputs.project_root}}/.atelier/project/00_tasks"
@@ -142,6 +196,7 @@ tasks:
       inputs:
         target: "{{inputs.n_todo}}"
         prior: "{{loop.previous}}"
+        max_usage: "{{inputs.max_usage}}"
         project_document: "{{inputs.project_root}}/.atelier/project/project.md"
         project_dir: "{{inputs.project_root}}/.atelier/project"
         project_root: "{{inputs.project_root}}"

@@ -3,15 +3,10 @@ version: 1
 conduits:
   - autonomous-projects
   - generate-idea
+  - generate-adhd-idea
   - generate-review
   - task-with-review
   - improve-task
   - improve-all-tasks
   - work-one-todo
   - scaffold-project
-skills:
-  - idea
-  - planning
-  - review
-  - spec
-  - build
