@@ -333,8 +333,11 @@ dep_guard ─┬─▶ counts ───────────────┐
 
 ### 0. `dep_guard`
 The DAG root. Fails fast, with a named message, when a **hard** dependency is
-missing from `PATH` — `python3`, `npx`, `claude` — so it stops the tick cleanly
-instead of crashing a branch deep in the run. Everything else only **warns**:
+missing from `PATH` — `python3`, `npx`, `claude` — or when `project_root` has no
+`.atelier/project/project.md` in it, so it stops the tick cleanly instead of
+crashing a branch deep in the run. (Without that second check a typo'd
+`project_root` passes every gate and the store steps `mkdir -p` a fresh board at
+the wrong path — a full tick written to nowhere.) Everything else only **warns**:
 missing `node` (the usage gate stops throttling), a missing agent-skills plugin
 or `adhd` skill (those steps degrade). See the table under
 [Requirements](#install).
@@ -558,11 +561,13 @@ pure and unit-tested; the generation/execution steps drive the AI harness.
 Sub-conduits receive their folder paths and per-tick `target`/`prior` from the
 parent, so the layout is defined in one place (`conduit.yaml`).
 
-All three generation branches gate on `require_markers.py` before storing:
-`generate_idea`, `diverge` (adhd) and `generate_review` each have to produce
-their `===…START===`/`===…END===` block, or the branch stops with
-`remaining: 0` and stores nothing. A step that ends its turn early would
-otherwise have its narration assembled into a proposal document.
+All four generation branches gate on `require_markers.py` before storing:
+`generate_idea`, `diverge` (adhd), `generate_review` and `improve_task` each
+have to produce their `===…START===`/`===…END===` block, or the branch stops
+with `remaining: 0` and stores nothing. A step that ends its turn early would
+otherwise have its narration assembled into a proposal document — and in
+`improve-task`, which deletes the raw inbox file once the card is stored, that
+would destroy the original task on the way out.
 
 ### Running the tests
 
