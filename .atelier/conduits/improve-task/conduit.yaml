@@ -22,20 +22,39 @@ tasks:
           --phase count --target "{{inputs.target}}" --prior "{{inputs.prior}}" \
           --conduit improve-task --max-usage "{{inputs.max_usage}}"
 
-  - pick_task:
-      description: "Deterministically select one .md file from the inbox; emit its absolute path on line 1, then the raw file contents."
+  - pick_path:
+      description: >
+        Deterministically choose ONE .md from the inbox and emit only its
+        absolute path (nothing when the inbox is drained). Kept separate from
+        pick_task so remove_source can delete exactly this file: re-globbing at
+        delete time raced a task dropped during the AI steps and deleted that
+        one instead. Emitting the bare path (not the file contents) is also what
+        keeps raw user text out of the later bash steps.
       tool: tool:bash
       depends_on:
         - 'count.output.not_match(remaining:\s*0)'
       task: |
         set -euo pipefail
         f="$(find "{{inputs.path_task}}" -maxdepth 1 -type f -name '*.md' | sort | head -n1)"
+        if [ -n "$f" ]; then
+          printf '%s\n' "$(cd "$(dirname "$f")" && pwd)/$(basename "$f")"
+        fi
+
+  - pick_task:
+      description: "Emit the picked file's absolute path on line 1, then the raw file contents."
+      tool: tool:bash
+      depends_on: [pick_path]
+      task: |
+        set -euo pipefail
+        # Take line 1 only: engine interpolation may carry a trailing newline.
+        f="{{pick_path.output}}"
+        f="${f%%$'\n'*}"
         if [ -z "$f" ]; then
           printf 'NOTHING TO SPEC\n'
           python3 "{{conduit_dir}}/../autonomous-projects/scripts/count_tasks.py" "{{inputs.path_task}}"
           exit 0
         fi
-        printf '%s\n' "$(cd "$(dirname "$f")" && pwd)/$(basename "$f")"
+        printf '%s\n' "$f"
         cat "$f"
 
   - improve_task:
@@ -171,6 +190,9 @@ tasks:
            Then write the filled document to:
            {{inputs.path_backlog}}/task_<slug>.md
            (literal prefix "task_" followed by the slug, e.g. task_dark-mode.md).
+           If that filename already exists, do NOT overwrite it — it is an
+           untriaged proposal the human has not seen yet. Append the lowest free
+           numeric suffix instead: task_<slug>.2.md, then .3.md, and so on.
            A later automated step removes the source inbox file — do not delete
            it here.
 
@@ -185,13 +207,17 @@ tasks:
         ---
 
   - remove_source:
-      description: "Delete the raw inbox file just spec'd, deterministically (not via the AI step), so the next pass picks a different one."
+      description: >
+        Delete the raw inbox file just spec'd — the exact file pick_path chose,
+        never a fresh glob. Re-globbing here deleted whatever sorted first at
+        delete time, so a task dropped into the inbox during the AI steps was
+        destroyed unread while the spec'd one stayed for another pass.
       tool: tool:bash
       depends_on: [store_task]
       task: |
         set -euo pipefail
-        f="$(find "{{inputs.path_task}}" -maxdepth 1 -type f -name '*.md' | sort | head -n1)"
-        [ -n "$f" ] && rm -f "$f" || true
+        python3 "{{conduit_dir}}/../autonomous-projects/scripts/remove_picked.py" \
+          --inbox "{{inputs.path_task}}" "{{pick_path.output}}"
 
   - advance:
       description: "Advance the per-tick counter (made: N) so the parent loop stops at target."

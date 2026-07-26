@@ -120,13 +120,18 @@ tasks:
       task: |
         # The heredoc must NOT sit inside a $( ): bash's scanner tracks quotes
         # through it, so one apostrophe in the model's prose ("doesn't") breaks
-        # the parse. The blank line before the terminator keeps ADHD_EOF on its
-        # own line even though the harness output has no trailing newline.
+        # the parse. The blank line before the terminator keeps it on its own
+        # line even though the harness output has no trailing newline.
+        # ponytail: a quoted heredoc is the safest primitive available for piping
+        # model text through bash, but a payload line equal to the terminator
+        # would still close it early — hence a terminator no prose would emit.
+        # (The old `ADHD_EOF` was plausible output for a step told to narrate an
+        # ADHD session, especially when reviewing this repo's own source.)
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/require_markers.py" \
-          --kind IDEA <<'ADHD_EOF'
+          --kind IDEA <<'__ATELIER_PAYLOAD_EOF__'
         {{diverge.output}}
 
-        ADHD_EOF
+        __ATELIER_PAYLOAD_EOF__
 
   - generate_plan:
       description: Produce a plan for the chosen idea, inline only.
@@ -205,6 +210,9 @@ tasks:
            Then write the filled document to:
            {{inputs.path_idea}}/adhd_<slug>.md
            (literal prefix "adhd_" followed by the slug, e.g. adhd_dark-mode.md).
+           If that filename already exists, do NOT overwrite it — it is an
+           untriaged proposal the human has not seen yet. Append the lowest free
+           numeric suffix instead: adhd_<slug>.2.md, then .3.md, and so on.
 
         Idea:
         ---

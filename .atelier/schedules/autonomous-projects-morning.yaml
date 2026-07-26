@@ -2,6 +2,14 @@
 #
 # EDIT project_root before using this: it must be the absolute path of the
 # repo holding .atelier/project/. One schedule per repo.
+#
+# OVERLAP: these times are 45 min apart, but a tick can run much longer (the
+# conduit's own timeout is 6h, work-one-todo's is 2h). If one overruns, the next
+# fires anyway and the two race over the same project files — most visibly
+# 02_in-progress/, which block_stranded sweeps wholesale. tick_lock.py cannot
+# guard this: it wraps a command, and `atelier scheduler` invokes the conduit
+# directly. Widen the spacing to match your real tick duration, or drive ticks
+# from cron wrapped in tick_lock.py instead.
 # Add with: atelier schedule add .atelier/schedules/autonomous-projects-morning.yaml
 
 conduit_name: autonomous-projects

@@ -529,9 +529,11 @@ autonomous-projects/
     usage.mjs            reads Claude Code's local 5h-usage data (also Codex/OpenCode)
     loop_count.py        per-tick counter (made:/remaining: via {{loop.previous}}) + the per-iteration usage re-check
     require_markers.py   non-fatal gate: did a generation step emit its ===MARKER=== block? stops one branch, not the tick
+    remove_picked.py     deletes exactly the inbox file the pick step chose (never a re-glob)
     new_project.py       one-command scaffolder (--repo, atomic)
     tick_lock.py         single-flight OS lock wrapper
-    tests/               loop_count, usage_check, require_markers, new_project, tick_lock, count_tasks, block_stranded, pick_next_task
+    tests/               loop_count, usage_check, require_markers, remove_picked, new_project,
+                         tick_lock, count_tasks, block_stranded, pick_next_task, promote_reviewed
   references/
     project_template.md  the project.md starter
     task_template.md     the task_*.md starter
@@ -539,7 +541,6 @@ generate-idea/           sub-conduit: inline idea prompt → :plan → store ide
 generate-adhd-idea/      sub-conduit: adhd skill (5 frames + critic) → :plan → store adhd_*.md (priority 3); counts to n_adhd
 generate-review/         sub-conduit: :review → :plan → store review_*.md (priority 2); counts to n_reviews
 improve-task/            sub-conduit: pick raw task → :spec + :plan → task_*.md (priority 1); counts to n_improve / inbox drain
-improve-all-tasks/       loops improve-task until the inbox drains (standalone; the tick calls improve-task directly)
 work-one-todo/           pick-by-priority → advance (build+review to DONE) → park stranded → count to n_todo / queue drain
 task-with-review/        one builder + one reviewer (each re-runs tests), returns a VERDICT
 scaffold-project/        standalone: scaffold .atelier/project/ into a target repo (wraps new_project.py; project_root, defaults to .)
@@ -556,6 +557,28 @@ directly in each sub-conduit). The usage shim, counter, and helper scripts are
 pure and unit-tested; the generation/execution steps drive the AI harness.
 Sub-conduits receive their folder paths and per-tick `target`/`prior` from the
 parent, so the layout is defined in one place (`conduit.yaml`).
+
+All three generation branches gate on `require_markers.py` before storing:
+`generate_idea`, `diverge` (adhd) and `generate_review` each have to produce
+their `===…START===`/`===…END===` block, or the branch stops with
+`remaining: 0` and stores nothing. A step that ends its turn early would
+otherwise have its narration assembled into a proposal document.
+
+### Running the tests
+
+The deterministic helpers have a pytest project; CI
+(`.github/workflows/tests.yml`) runs it on every push and pull request:
+
+```bash
+cd .atelier/conduits/autonomous-projects/scripts
+uv sync --group dev
+uv run pytest -q
+```
+
+Modules that live beside another conduit (`pick_next_task.py`,
+`promote_reviewed.py` under `work-one-todo/scripts/`) are tested from this same
+project, which reaches sideways for them — keep new tests here so they are
+actually collected.
 
 ---
 
@@ -601,10 +624,18 @@ dropped, and advances up to `n_todo` approved to-do tasks through the two-agent
 DONE loop — skipping any activity whose harness is over your usage ceiling. You
 wake up to a triaged backlog and reviewed diffs waiting for your yes.
 
-**Single-flight (cron / custom timers).** A tick may run up to 2h, so on a
-30-min interval a slow tick can still be working when the next fires — two runs
-then race over the same project files. Wrap the invocation in `tick_lock.py` so
-the second run prints a skip note and exits instead:
+**Overlapping ticks.** A tick may run for hours, so on a short interval a slow
+tick can still be working when the next fires — two runs then race over the same
+project files, most visibly `02_in-progress/`, which `block_stranded` sweeps
+wholesale (it parks *every* card it finds there, including one the other tick is
+still working). The four shipped schedules are spaced 45 minutes apart, which is
+comfortably shorter than a heavy tick, so **set the spacing to match your real
+tick duration before relying on them.**
+
+`tick_lock.py` makes this airtight, but note what it can and cannot cover: it
+wraps a **command**, so it works for cron and your own timers, and it does *not*
+apply to `atelier scheduler`, which invokes the conduit directly with nothing to
+wrap. For cron / custom timers:
 
 ```bash
 python3 .atelier/conduits/autonomous-projects/scripts/tick_lock.py \
@@ -613,3 +644,9 @@ python3 .atelier/conduits/autonomous-projects/scripts/tick_lock.py \
 
 It takes an OS advisory lock for the whole run; the kernel releases it if the
 run crashes or is killed, so a dead run never jams the loop.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
