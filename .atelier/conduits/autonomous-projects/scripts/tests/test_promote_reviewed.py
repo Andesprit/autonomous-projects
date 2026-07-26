@@ -1,7 +1,9 @@
 """Runnable check for promote_reviewed: move 02_in-progress -> 03_to-review.
 
-Works under pytest AND as a plain script (`python3 test_promote_reviewed.py`),
-since work-one-todo has no pytest project of its own.
+Lives in the autonomous-projects pytest project (work-one-todo has none of its
+own) and reaches sideways for the module, the same way test_pick_next_task.py
+does. It used to sit next to the module under work-one-todo/scripts/tests/,
+outside any rootdir, so `uv run pytest` never collected it.
 ponytail: the de-clobber branch is the non-trivial logic -> one check.
 """
 
@@ -11,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "work-one-todo" / "scripts"))
 from promote_reviewed import promote_reviewed  # noqa: E402
 
 

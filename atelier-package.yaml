@@ -7,6 +7,5 @@ conduits:
   - generate-review
   - task-with-review
   - improve-task
-  - improve-all-tasks
   - work-one-todo
   - scaffold-project

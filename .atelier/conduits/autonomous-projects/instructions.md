@@ -17,22 +17,38 @@ anything reaches the human. Full detail: repo `README.md`.
 
 ```bash
 atelier run autonomous-projects --input project_root=/abs/path/to/repo \
-  --input n_ideas=2 --input n_reviews=1 --input n_improve=0 --input n_todo=3
+  --input n_ideas=2 --input n_adhd=0 --input n_reviews=1 \
+  --input n_improve=0 --input n_todo=3
 ```
 
 - `project_root` (required): absolute path to the repo that holds
   `.atelier/project/` — the codebase the bot edits.
-- `n_ideas` / `n_reviews` / `n_improve` / `n_todo`: how many of each activity
-  this tick. **All default `0`, so a bare run does nothing.** Name only what you
-  want. `n_improve` drains raw tasks from `00_tasks/`; `n_todo` advances approved
-  tasks from `01_to-do/`. Both stop early if their queue empties.
+- `n_ideas` / `n_adhd` / `n_reviews` / `n_improve` / `n_todo`: how many of each
+  activity this tick. Set any to `0` to skip it.
+
+  | input | default | activity |
+  |---|---|---|
+  | `n_ideas`   | `10` | straightforward ideas → `00_backlog/` |
+  | `n_adhd`    | `3`  | divergent (`adhd` skill) ideas → `00_backlog/`; **~10 agent calls each** |
+  | `n_reviews` | `5`  | code reviews → `00_backlog/` |
+  | `n_improve` | `0`  | raw tasks drained from `00_tasks/` |
+  | `n_todo`    | `0`  | approved tasks advanced from `01_to-do/` |
+
+  **A bare run is not a no-op**: the proposal counts default to `10`/`3`/`5`,
+  which is 18 AI activities and a long, quota-hungry tick. Only the queue counts
+  (`n_improve`, `n_todo`) default to `0`, so a bare run tops up the backlog and
+  never touches work you have approved. `n_improve` and `n_todo` both stop early
+  if their queue empties.
 - `max_usage` (default `80`): skip an activity if the harness's live 5h usage is
   at/over this %.
 
 ## First time on a repo
 
-1. Need `uv`, the `claude` CLI, and `python3` on PATH (the tick's `dep_guard`
-   checks this and fails fast if missing).
+1. Need `python3`, `npx` (Node), and the `claude` CLI on PATH — the tick's
+   `dep_guard` checks these and fails fast if any is missing. `node` itself is
+   only a warning, but without it `max_usage` stops throttling anything (the
+   usage gate fails open). `uv` is **not** required by any conduit; it matters
+   only if your own project's `test_command` uses it.
 2. If the repo has no `.atelier/project/`, scaffold it:
    ```bash
    atelier run scaffold-project --input project_root=/abs/path/to/repo
@@ -87,14 +103,23 @@ Run on a timer — one schedule file per repo, with the per-tick counts you want
 
 ```yaml
 conduit_name: autonomous-projects
-inputs: {project_root: /abs/path/to/repo, n_ideas: "2", n_reviews: "1", n_todo: "5"}
+run_path: /abs/path/to/repo
+inputs: {project_root: /abs/path/to/repo, n_ideas: "2", n_adhd: "0", n_reviews: "1", n_todo: "5"}
 schedule: {mode: interval, name: autonomous-projects-30min, every_minutes: 30, timezone: America/Bogota}
 ```
+
+Name every count you care about — anything you omit keeps its default, so
+leaving out `n_adhd` schedules 3 divergent ideas (~30 agent calls) per tick.
 
 ```bash
 atelier schedule add path/to/schedule.yaml
 atelier scheduler start
 ```
 
-Wrap the run in `scripts/tick_lock.py` if ticks can overlap (a tick may run up
-to 2h) so a slow tick doesn't race the next.
+**Overlap.** A tick can run for hours, so on a short interval a slow tick is
+still working when the next fires and the two race over the same project files
+(most visibly `02_in-progress/`, which `block_stranded` sweeps wholesale). Set
+the interval wider than your typical tick. `scripts/tick_lock.py` makes this
+airtight, but it wraps a *command* — so it applies when you drive ticks from
+cron or your own timer, not to `atelier scheduler`, which invokes the conduit
+directly.

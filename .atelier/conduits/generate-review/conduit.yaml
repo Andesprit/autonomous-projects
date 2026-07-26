@@ -83,10 +83,35 @@ tasks:
           (lowercase, kebab-case, no spaces):
           REVIEW_SLUG: <kebab-case-name>
 
+  - require_review:
+      description: >
+        Say out loud whether generate_review honoured its ===REVIEW=== output
+        contract. Without this, a step that ended its turn early (returning
+        narration instead of a review) still flows into store_review, which then
+        assembles a review document out of that narration. On a miss it emits
+        `remaining: 0`, which stops THIS branch and leaves the sibling branches
+        running — the engine is fail-fast, so failing here would cancel them.
+      tool: tool:bash
+      depends_on: [generate_review]
+      task: |
+        # The heredoc must NOT sit inside a $( ): bash's scanner tracks quotes
+        # through it, so one apostrophe in the model's prose ("doesn't") breaks
+        # the parse. The blank line before the terminator keeps it on its own
+        # line even though the harness output has no trailing newline.
+        # ponytail: a quoted heredoc is the safest primitive available for piping
+        # model text through bash, but a payload line equal to the terminator
+        # would still close it early — hence a terminator no prose would emit.
+        python3 "{{conduit_dir}}/../autonomous-projects/scripts/require_markers.py" \
+          --kind REVIEW <<'__ATELIER_PAYLOAD_EOF__'
+        {{generate_review.output}}
+
+        __ATELIER_PAYLOAD_EOF__
+
   - generate_plan:
       description: Produce a plan for the generated review, inline only.
       tool: harness:claude-code
-      depends_on: [generate_review]
+      depends_on:
+        - 'require_review.output.match(ok:\s*true)'
       retries: 2
       retry_backoff: 5
       task: |
@@ -159,6 +184,9 @@ tasks:
            Then write the filled document to:
            {{inputs.path_review}}/review_<slug>.md
            (literal prefix "review_" followed by the slug, e.g. review_auth-module.md).
+           If that filename already exists, do NOT overwrite it — it is an
+           untriaged proposal the human has not seen yet. Append the lowest free
+           numeric suffix instead: review_<slug>.2.md, then .3.md, and so on.
 
         Review:
         ---
