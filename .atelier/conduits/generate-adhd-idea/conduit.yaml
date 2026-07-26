@@ -1,51 +1,77 @@
-name: generate-idea
-description: Generate one idea for a project, plan it, and store it as an idea document.
-timeout: 3600
+name: generate-adhd-idea
+description: >
+  Generate one idea for a project through the `adhd` skill's divergent
+  ideation loop (5 isolated cognitive frames, then a critic pass), plan the
+  surviving non-obvious pick, and store it as an adhd_*.md idea document.
+  Expensive by design — roughly 10 agent calls and ~30 min per idea.
+timeout: 7200
 max_concurrency: 1
 
 inputs:
   project_document: Path to the project document (goal/constraints/context) the agent reads.
   template_dir: "Directory holding task_template.md (threaded from the parent conduit)."
-  path_idea: "Folder holding prior idea_*.md (and queued task_*/review_*) documents; the new idea_*.md is written here."
+  path_idea: "Folder holding prior idea_*/adhd_* (and queued task_*/review_*) documents; the new adhd_*.md is written here."
   bad_ideas: "Folder of rejected-idea files the agent must read to avoid re-proposing them."
   tasks_dir: "Project root whose 01_to-do/02_in-progress/03_to-review/04_done subfolders the agent reads for prior work."
-  target: "How many ideas the parent wants this tick (the n_ideas count)."
+  target: "How many adhd ideas the parent wants this tick (the n_adhd count)."
   prior: "The previous iteration's counter output ({{loop.previous}}); empty on iteration 1."
   max_usage: {default: "80"}   # usage ceiling %; the per-iteration re-check stops the loop when the harness is at/over it
 
 tasks:
   - count:
-      description: "Gate the activity off once `target` ideas have been made this tick."
+      description: "Gate the activity off once `target` adhd ideas have been made this tick."
       tool: tool:bash
       depends_on: []
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
           --phase count --target "{{inputs.target}}" --prior "{{inputs.prior}}" \
-          --conduit generate-idea --max-usage "{{inputs.max_usage}}"
+          --conduit generate-adhd-idea --max-usage "{{inputs.max_usage}}"
 
-  - generate_idea:
-      description: Generate one concrete idea for the project.
+  - diverge:
+      description: Run the adhd divergent-ideation loop and emit its non-obvious pick as one idea.
       tool: harness:claude-code
       depends_on:
         - 'count.output.not_match(remaining:\s*0)'
       retries: 2
       retry_backoff: 5
       task: |
-        Propose ONE improvement idea for this codebase: a single theme plus 2-4
-        concrete small wins that ladder up to it. Propose only — never edit
-        code, never start implementing.
+        Use the `adhd` skill.
+
+        This is an explicit ADHD invocation: SKIP the skill's pre-flight gate
+        and go straight to Phase 1. Do not abort, do not "answer directly
+        instead", and do not substitute a single-shot idea for the loop — the
+        divergence is the whole point of this step. Run the real loop: 5
+        parallel, isolated Agent calls under 5 different frames, then the
+        scoring / clustering / trap-flagging critic pass, then deepen the top
+        survivors. Vary your frame picks from run to run.
+
+        This is a single non-interactive turn — nobody will prompt you again.
+        The branch Agent calls return their results to you inside this same
+        turn, so when they come back, go straight on to Phase 2 and then to
+        the output below. Do NOT end your turn after launching the branches,
+        do NOT emit a progress note like "waiting on the branches", and do NOT
+        ask whether to continue. Your turn ends only when the IDEA_SLUG line
+        below has been written; a response without the markers is a failed
+        step, not a partial one.
+
+        The problem to diverge on: what is the highest-leverage improvement
+        to make to THIS codebase right now — the one a careful maintainer
+        would not have reached for first?
 
         Read this project document first to understand the project's goal and
-        constraints, and ground your idea in it: {{inputs.project_document}}
+        constraints, and ground every branch in it: {{inputs.project_document}}
 
-        Then focus on the codebase at the path outlined in the project document
+        Then read the codebase at the path outlined in the project document.
+        Every branch must diverge on the real code, not on a generic project.
+        The project's `# Constraints` are binding: an idea that violates one is
+        a trap, flag it as such and do not let it win.
 
-        Before proposing anything, review prior context so you don't repeat work:
-        - Existing ideas live in this folder: {{inputs.path_idea}}
-          Read the idea_*.md and adhd_*.md files there. Also read the task_*.md
-          and review_*.md files in the same folder — those are already-written-up
-          proposals waiting to be promoted. Your new idea MUST be meaningfully
-          distinct from every one of them.
+        Before diverging, review prior context so you don't repeat work:
+        - Existing proposals live in this folder: {{inputs.path_idea}}
+          Read the idea_*.md, adhd_*.md, task_*.md and review_*.md files
+          there — those are already-written-up proposals waiting to be
+          promoted. Your pick MUST be meaningfully distinct from every one of
+          them.
         - Rejected ideas live in this folder: {{inputs.bad_ideas}}
           Each file holds a bad idea and the user's reasoning for why it is bad.
           Do NOT propose ideas of those kinds; respect the stated reasoning.
@@ -54,62 +80,59 @@ tasks:
           and `04_done/` subfolders — their `# Description` sections describe work
           already queued, being worked, implemented and awaiting review, or
           completed (`# What was done` records the result for finished tasks).
-          Your new idea MUST NOT duplicate any of them.
+          Your pick MUST NOT duplicate any of them.
         If a path is empty or the folder does not exist, treat it as "no prior
         ideas/tasks" and continue.
 
-        How to find the idea:
-        1. Survey before proposing. Read — don't skim: the directory layout and
-           entry points, the files that actually carry the load (the biggest,
-           the most-imported, the hot path), and the friction signals
-           (TODO/FIXME/HACK comments, duplicated blocks, a thin test dir, long
-           functions, commented-out code, patterns that disagree between
-           modules).
-        2. Rotate the lens. This conduit runs again and again, so pick a
-           dimension you did not just cover: architecture & boundaries,
-           developer experience, testing & confidence, consistency,
-           performance, robustness, maintainability. Run
-           `git log --oneline -30` and steer AWAY from whatever was just worked
-           on. If a lens has nothing grounded in real observed code, drop it —
-           do not invent a problem to fill it.
-        3. State one theme: what it is, why it matters for THIS codebase (cite
-           the evidence you found), and what better looks like. Be honest about
-           cost vs. payoff.
-        4. Under it, name 2-4 small wins. Each points at a specific file (and
-           function/line where you can) and could land as one small change.
-           Present them as an unordered set — do not rank them, sequence them,
-           or tag one as the place to start.
-
-        Evidence or it's cut: if you cannot name the file and the specific
-        thing you saw, you have not earned the suggestion — delete it. Generic
-        advice ("add more tests", "improve error handling", "add
-        documentation") applies to every codebase and points at nothing; it is
-        never an acceptable idea here. One well-grounded small win beats four
-        vague ones.
-
-        Produce exactly ONE idea. Do not propose multiple competing ideas.
-
-        Write the idea text (the part between the markers) in plain, accessible
-        language a non-expert can follow: explain the "what" and the "why" in
-        everyday terms. Avoid jargon and deep implementation detail here — that
-        belongs in the plan, not the description.
+        Then pick ONE idea to carry forward: the shortlist entry you marked ★
+        (the non-obvious-but-viable pick). Never carry forward an idea you
+        flagged as a trap, and never carry forward one that is merely the
+        obvious answer wearing a costume.
 
         Output format (strict):
-        - Do all exploration and reasoning first; NONE of that narration may
-          appear in the final idea.
-        - Emit the idea between the two marker lines below, on their own lines,
-          with ONLY the idea text in between (no preamble, no tool commentary,
-          no closing remarks):
+        - Render the full ADHD session first (brief, wide set, converge,
+          focus, provocation) — that is your working, and NONE of it may
+          appear inside the markers below.
+        - Then emit the chosen idea between the two marker lines below, on
+          their own lines, with ONLY the idea text in between (no preamble, no
+          tool commentary, no closing remarks):
           ===IDEA START===
           ===IDEA END===
+        - Inside the markers, write for a non-expert: the "what" and the "why"
+          in everyday terms, anchored to the real files you read, plus one
+          plain sentence on what makes this pick non-obvious. Fold in the
+          deepened branch's load-bearing risk and first concrete step. Avoid
+          jargon and deep implementation detail here — that belongs in the
+          plan, not the description. Do not use the score chips, cluster
+          labels, or the ★ inside the markers.
         - After the END marker, output one final line naming the idea
           (lowercase, kebab-case, no spaces):
           IDEA_SLUG: <kebab-case-name>
 
+  - require_idea:
+      description: >
+        Say out loud whether diverge honoured its output contract (it can end
+        its turn after launching the branches). On a miss it emits
+        `remaining: 0`, which stops THIS branch and leaves the sibling branches
+        running — the engine is fail-fast, so failing here would cancel them.
+      tool: tool:bash
+      depends_on: [diverge]
+      task: |
+        # The heredoc must NOT sit inside a $( ): bash's scanner tracks quotes
+        # through it, so one apostrophe in the model's prose ("doesn't") breaks
+        # the parse. The blank line before the terminator keeps ADHD_EOF on its
+        # own line even though the harness output has no trailing newline.
+        python3 "{{conduit_dir}}/../autonomous-projects/scripts/require_markers.py" \
+          --kind IDEA <<'ADHD_EOF'
+        {{diverge.output}}
+
+        ADHD_EOF
+
   - generate_plan:
-      description: Produce a plan for the generated idea, inline only.
+      description: Produce a plan for the chosen idea, inline only.
       tool: harness:claude-code
-      depends_on: [generate_idea]
+      depends_on:
+        - 'require_idea.output.match(ok:\s*true)'
       retries: 2
       retry_backoff: 5
       task: |
@@ -125,7 +148,7 @@ tasks:
         "===IDEA START===" / "===IDEA END===" markers; ignore everything else):
 
         ---
-        {{generate_idea.output}}
+        {{diverge.output}}
         ---
 
         IMPORTANT: Output the full plan inline in your response only. Do NOT write
@@ -143,7 +166,7 @@ tasks:
   - store_idea:
       description: Assemble the idea document from the template and write it to path_idea.
       tool: harness:claude-code
-      depends_on: [generate_idea, generate_plan]
+      depends_on: [diverge, generate_plan]
       retries: 2
       retry_backoff: 5
       task: |
@@ -162,13 +185,14 @@ tasks:
              headings inside it to "## " so they don't read as document
              sections — but ONLY outside fenced code blocks: a "#"
              starting a line inside ``` fences is a code comment, leave
-             it exactly as is. Discard everything outside the markers (model
-             narration, the markers themselves, and the IDEA_SLUG line).
+             it exactly as is. Discard everything outside the markers (the ADHD
+             session itself, model narration, the markers themselves, and the
+             IDEA_SLUG line).
            - "# Plan": ONLY the text between the "===PLAN START===" and
              "===PLAN END===" markers in the plan below. Strip a leading
              top-level "# ..." heading if present (the template already provides
              "# Plan"). Discard everything outside the markers.
-            - Frontmatter: set `priority: 3`
+           - Frontmatter: set `priority: 3`
            - Leave "# Spec", "# User comments", "# What was done", and
              "# How was done and tested" empty. Set `creation_datetime` to the
              output of `date '+%Y-%m-%d %H:%M:%S %Z'`, and leave
@@ -179,12 +203,12 @@ tasks:
 
         4. Run: mkdir -p "{{inputs.path_idea}}"
            Then write the filled document to:
-           {{inputs.path_idea}}/idea_<slug>.md
-           (literal prefix "idea_" followed by the slug, e.g. idea_dark-mode.md).
+           {{inputs.path_idea}}/adhd_<slug>.md
+           (literal prefix "adhd_" followed by the slug, e.g. adhd_dark-mode.md).
 
         Idea:
         ---
-        {{generate_idea.output}}
+        {{diverge.output}}
         ---
 
         Plan:

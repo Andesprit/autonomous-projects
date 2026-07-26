@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from loop_count import advance_phase, count_phase, parse_made
+from loop_count import advance_phase, count_phase, parse_made, usage_ok
 
 _REMAINING_ZERO = re.compile(r"remaining:\s*0")
 
@@ -44,6 +44,34 @@ def test_count_phase_passes_through_under_target():
 def test_advance_phase_advances_and_computes_remaining():
     assert advance_phase("", 3) == "made: 1\nremaining: 2"
     assert advance_phase("made: 2\nremaining: 1", 3) == "made: 3\nremaining: 0"
+
+
+def test_count_phase_stops_the_loop_when_over_the_usage_ceiling():
+    # The parent checks usage once before the branch; a 10-iteration branch can
+    # cross the ceiling halfway through, so the count phase re-checks and stops.
+    out = count_phase("made: 2\nremaining: 8", 10, usage_ok=False)
+    assert _REMAINING_ZERO.search(out)
+    assert "made: 2" in out
+    assert "stopped: usage" in out
+
+
+def test_count_phase_under_ceiling_is_unchanged():
+    assert count_phase("made: 2", 10, usage_ok=True) == count_phase("made: 2", 10)
+
+
+def test_usage_ok_skipped_when_not_requested():
+    assert usage_ok(None, None) is True
+    assert usage_ok("generate-idea", None) is True
+    assert usage_ok(None, "80") is True
+
+
+def test_usage_ok_unparseable_ceiling_fails_open():
+    assert usage_ok("generate-idea", "not-a-number") is True
+
+
+def test_usage_ok_unknown_conduit_fails_open():
+    # No such sub-conduit -> harness unresolved -> never throttle on it.
+    assert usage_ok("no-such-conduit", "80") is True
 
 
 def _simulate(target: int, repeat_ceiling: int = 50) -> int:

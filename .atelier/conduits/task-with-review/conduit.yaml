@@ -12,7 +12,14 @@ tasks:
       tool: harness:claude-code
       depends_on: []
       task: |
-        /build
+        /agent-skills:build
+
+        The task is the text below — it is already chosen and already spec'd.
+        Do NOT look for a spec (`SPEC.md`, `docs/SPEC.md`, `spec/*`), do NOT
+        look for `tasks/plan.md` or `tasks/todo.md`, and do NOT switch to
+        autonomous (`auto`) mode. The task text carries its own claim / test / commit
+        protocol; follow it exactly, in the order it gives, over the skill's
+        defaults where the two disagree.
 
         Perform the following task to completion:
 

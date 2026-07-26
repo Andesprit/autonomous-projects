@@ -1,31 +1,28 @@
-id: bf20371c-bc1a-4f57-8ad7-9fasdaf
+# Winding down: no divergent pass, just finish approved work.
+#
+# EDIT project_root before using this: it must be the absolute path of the
+# repo holding .atelier/project/. One schedule per repo.
+# Add with: atelier schedule add .atelier/schedules/autonomous-projects-evening.yaml
+
 conduit_name: autonomous-projects
+# run_path is the working directory the tick runs in; point it at the same repo.
+run_path: /abs/path/to/your/repo
 inputs:
-  idle_hours: 0.1
-  max_usage_cc: 50
-  max_usage_codex: 85
-  max_usage_opencode: 85
-  harness_ideation: cc
-  harness_development: opencode
-  harness_review: codex
-run_path: /Users/ganga/Documents/personal_repos/flow-atelier
+  project_root: /abs/path/to/your/repo
+  n_ideas: "3"
+  n_adhd: "0"
+  n_reviews: "1"
+  n_improve: "0"
+  n_todo: "3"
+  max_usage: "50"
 schedule:
   mode: recurring
   name: autonomous-projects-evening
-  days:
-  - 1
-  - 2
-  - 3
-  - 4
-  - 5
-  - 6
-  - 7
+  days: [1, 2, 3, 4, 5, 6, 7]
   times:
-  - '17:30'
-  - '18:15'
-  - '19:00'
-  - '19:45'
-  - '20:30'
+    - "17:30"
+    - "18:15"
+    - "19:00"
+    - "19:45"
+    - "20:30"
   timezone: America/Bogota
-created_at: 1779778874
-runs_completed: 70

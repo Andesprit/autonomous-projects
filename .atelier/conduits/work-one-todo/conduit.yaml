@@ -15,6 +15,7 @@ inputs:
   project_root: "Path to the target repo (the codebase) the worker edits."
   target: "How many to-do tasks the parent wants advanced this tick (the n_todo count)."
   prior: "The previous iteration's counter output ({{loop.previous}}); empty on iteration 1."
+  max_usage: {default: "80"}   # usage ceiling %; the per-iteration re-check stops the loop when the harness is at/over it
 
 tasks:
   - count:
@@ -23,7 +24,8 @@ tasks:
       depends_on: []
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
-          --phase count --target "{{inputs.target}}" --prior "{{inputs.prior}}"
+          --phase count --target "{{inputs.target}}" --prior "{{inputs.prior}}" \
+          --conduit work-one-todo --max-usage "{{inputs.max_usage}}"
 
   - pick:
       description: "Emit the highest-priority to-do filename (priority asc, name asc)."

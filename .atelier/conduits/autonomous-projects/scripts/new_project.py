@@ -3,8 +3,11 @@
 Usage:
     uv run python new_project.py --repo <path>
 
-Creates <repo>/.atelier/project/ with project.md (from the template) and all
-stage folders. Atomic: builds in a temp dir, renames on success.
+Creates <repo>/.atelier/project/ with project.md (from the template) and the
+seven stage folders the human and the bot both use. 05_blocked/ is deliberately
+not created here — block_stranded.py makes it the first time a task actually
+gets parked, so an untouched board has no empty "something went wrong" folder.
+Atomic: builds in a temp dir, renames on success.
 """
 
 from __future__ import annotations

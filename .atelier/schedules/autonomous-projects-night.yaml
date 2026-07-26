@@ -1,38 +1,35 @@
-id: bf20371c-bc1a-4f57-8ad7-xsadfaf
+# Nobody waiting: the full default proposal load plus execution, up to a high ceiling.
+#
+# EDIT project_root before using this: it must be the absolute path of the
+# repo holding .atelier/project/. One schedule per repo.
+# Add with: atelier schedule add .atelier/schedules/autonomous-projects-night.yaml
+
 conduit_name: autonomous-projects
+# run_path is the working directory the tick runs in; point it at the same repo.
+run_path: /abs/path/to/your/repo
 inputs:
-  idle_hours: 0.1
-  max_usage_cc: 85
-  max_usage_codex: 85
-  max_usage_opencode: 85
-  harness_ideation: cc
-  harness_development: cc
-  harness_review: codex
-run_path: /Users/ganga/Documents/personal_repos/flow-atelier
+  project_root: /abs/path/to/your/repo
+  n_ideas: "10"
+  n_adhd: "3"
+  n_reviews: "5"
+  n_improve: "0"
+  n_todo: "5"
+  max_usage: "85"
 schedule:
   mode: recurring
   name: autonomous-projects-night
-  days:
-  - 1
-  - 2
-  - 3
-  - 4
-  - 5
-  - 6
-  - 7
+  days: [1, 2, 3, 4, 5, 6, 7]
   times:
-  - '21:30'
-  - '22:15'
-  - '23:00'
-  - '23:45'
-  - '00:30'
-  - '01:15'
-  - '02:00'
-  - '02:45'
-  - '03:30'
-  - '04:15'
-  - '05:00'
-  - '05:45'
+    - "21:30"
+    - "22:15"
+    - "23:00"
+    - "23:45"
+    - "00:30"
+    - "01:15"
+    - "02:00"
+    - "02:45"
+    - "03:30"
+    - "04:15"
+    - "05:00"
+    - "05:45"
   timezone: America/Bogota
-created_at: 1779778874
-runs_completed: 70
