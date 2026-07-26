@@ -21,7 +21,20 @@ import sys
 from pathlib import Path
 
 # harness:<name> from a sub-conduit's `tool:` -> the label usage.mjs prints.
-USAGE_LABEL = {"claude-code": "claudecode", "codex": "codex", "opencode": "opencode"}
+#
+# Both spellings of each agent are listed. flow-atelier resolves harness names
+# through the ACP registry now, so the same agent can legally be written with
+# its registry id (`harness:claude-acp`) as well as the legacy name the
+# conduits use (`harness:claude-code`). A name that is missing here is not an
+# error -- is_ok fails open -- which means the max_usage ceiling would quietly
+# stop throttling, so keep this in sync when a conduit's `tool:` is renamed.
+USAGE_LABEL = {
+    "claude-code": "claudecode",
+    "claude-acp": "claudecode",
+    "codex": "codex",
+    "codex-acp": "codex",
+    "opencode": "opencode",
+}
 
 _HARNESS_RE = re.compile(r"harness:([a-z][a-z0-9-]*)")
 _DELEGATE_RE = re.compile(r'^\s*task:\s*"?([a-z][a-z0-9-]+)"?\s*$', re.MULTILINE)
@@ -107,6 +120,15 @@ def main() -> int:
         ceiling: int | None = int(args.max_usage)
     except (TypeError, ValueError):
         ceiling = None
+    if harness and harness not in USAGE_LABEL:
+        # Fail-open is deliberate, but silence is not: without this the tick
+        # runs unthrottled and nothing says why.
+        print(
+            f"warning: no usage label for harness {harness!r}; "
+            f"max_usage will not throttle this activity "
+            f"(known: {', '.join(sorted(USAGE_LABEL))})",
+            file=sys.stderr,
+        )
     ok = is_ok(harness, read_usage(), ceiling)
     print(f"ok: {str(ok).lower()}")
     return 0
