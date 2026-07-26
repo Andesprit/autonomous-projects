@@ -49,7 +49,9 @@ atelier run autonomous-projects --input project_root=/abs/path/to/repo \
    only a warning, but without it `max_usage` stops throttling anything (the
    usage gate fails open). `uv` is **not** required by any conduit; it matters
    only if your own project's `test_command` uses it.
-2. If the repo has no `.atelier/project/`, scaffold it:
+2. If the repo has no `.atelier/project/`, scaffold it — `dep_guard` fails the
+   tick when `project_root/.atelier/project/project.md` is missing, so a typo'd
+   path stops up front instead of writing a board somewhere it doesn't belong:
    ```bash
    atelier run scaffold-project --input project_root=/abs/path/to/repo
    ```

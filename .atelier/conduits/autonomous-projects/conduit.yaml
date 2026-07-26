@@ -29,9 +29,10 @@ inputs:
 tasks:
   - dep_guard:
       description: >
-        Fail fast on a missing hard dependency (python3, npx, claude), and warn
-        about the soft ones (node, the two skill sets) rather than blocking —
-        those degrade a step, they don't break the tick.
+        Fail fast on a missing hard dependency (python3, npx, claude) or a
+        project_root with no .atelier/project/ in it, and warn about the soft
+        ones (node, the two skill sets) rather than blocking — those degrade a
+        step, they don't break the tick.
       tool: tool:bash
       depends_on: []
       task: |
@@ -49,6 +50,16 @@ tasks:
           printf 'missing dependency: %s\n' "${missing[@]}" | sort -u >&2
           exit 1
         fi
+
+        # Hard: a typo'd project_root otherwise sails through every gate —
+        # counts echo, usage says ok, the prompts treat a missing folder as "no
+        # prior context", and the store steps mkdir -p a fresh board at the
+        # wrong path. A whole quota-hungry tick, silently written to nowhere.
+        [ -f "{{inputs.project_root}}/.atelier/project/project.md" ] || {
+          printf 'no project at %s — run scaffold-project on that repo first\n' \
+            "{{inputs.project_root}}/.atelier/project/" >&2
+          exit 1
+        }
 
         # Soft: each of these degrades one thing and is worth saying out loud.
         # (`uv` is deliberately NOT required — no conduit runs it; it only
