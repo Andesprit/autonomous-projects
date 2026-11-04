@@ -37,6 +37,9 @@ tasks:
       depends_on: []
       task: |
         set -euo pipefail
+        # Every shell step reads its values from $INPUT_* (and $INPUT_*_FILE),
+        # which flow-atelier 0.12 and older never set.
+        : "${INPUT_PROJECT_ROOT_FILE:?this package needs a flow-atelier newer than 0.12.0}"
         missing=()
         # Hard: every AI step launches the ACP agent through npx, every helper
         # script runs on python3, and the ACP agent drives the claude CLI.
@@ -55,9 +58,9 @@ tasks:
         # counts echo, usage says ok, the prompts treat a missing folder as "no
         # prior context", and the store steps mkdir -p a fresh board at the
         # wrong path. A whole quota-hungry tick, silently written to nowhere.
-        [ -f "{{inputs.project_root}}/.atelier/project/project.md" ] || {
+        [ -f "$INPUT_PROJECT_ROOT/.atelier/project/project.md" ] || {
           printf 'no project at %s — run scaffold-project on that repo first\n' \
-            "{{inputs.project_root}}/.atelier/project/" >&2
+            "$INPUT_PROJECT_ROOT/.atelier/project/" >&2
           exit 1
         }
 
@@ -82,43 +85,43 @@ tasks:
       depends_on: [dep_guard]
       task: |
         printf 'n_ideas: %s\nn_adhd: %s\nn_reviews: %s\nn_improve: %s\nn_todo: %s\n' \
-          "{{inputs.n_ideas}}" "{{inputs.n_adhd}}" "{{inputs.n_reviews}}" \
-          "{{inputs.n_improve}}" "{{inputs.n_todo}}"
+          "$INPUT_N_IDEAS" "$INPUT_N_ADHD" "$INPUT_N_REVIEWS" \
+          "$INPUT_N_IMPROVE" "$INPUT_N_TODO"
 
   - usage_ideas:
       description: "ok: true if generate-idea's harness is under max_usage (fail-open)."
       tool: tool:bash
       depends_on: ['counts.output.match(n_ideas:\s*[1-9])']
       task: |
-        python3 {{conduit_dir}}/scripts/usage_check.py --conduit generate-idea --max-usage "{{inputs.max_usage}}"
+        python3 {{conduit_dir}}/scripts/usage_check.py --conduit generate-idea --max-usage "$INPUT_MAX_USAGE"
 
   - usage_adhd:
       description: "ok: true if generate-adhd-idea's harness is under max_usage (fail-open)."
       tool: tool:bash
       depends_on: ['counts.output.match(n_adhd:\s*[1-9])']
       task: |
-        python3 {{conduit_dir}}/scripts/usage_check.py --conduit generate-adhd-idea --max-usage "{{inputs.max_usage}}"
+        python3 {{conduit_dir}}/scripts/usage_check.py --conduit generate-adhd-idea --max-usage "$INPUT_MAX_USAGE"
 
   - usage_reviews:
       description: "ok: true if generate-review's harness is under max_usage (fail-open)."
       tool: tool:bash
       depends_on: ['counts.output.match(n_reviews:\s*[1-9])']
       task: |
-        python3 {{conduit_dir}}/scripts/usage_check.py --conduit generate-review --max-usage "{{inputs.max_usage}}"
+        python3 {{conduit_dir}}/scripts/usage_check.py --conduit generate-review --max-usage "$INPUT_MAX_USAGE"
 
   - usage_improve:
       description: "ok: true if improve-task's harness is under max_usage (fail-open)."
       tool: tool:bash
       depends_on: ['counts.output.match(n_improve:\s*[1-9])']
       task: |
-        python3 {{conduit_dir}}/scripts/usage_check.py --conduit improve-task --max-usage "{{inputs.max_usage}}"
+        python3 {{conduit_dir}}/scripts/usage_check.py --conduit improve-task --max-usage "$INPUT_MAX_USAGE"
 
   - usage_todo:
       description: "ok: true if work-one-todo's harness is under max_usage (fail-open)."
       tool: tool:bash
       depends_on: ['counts.output.match(n_todo:\s*[1-9])']
       task: |
-        python3 {{conduit_dir}}/scripts/usage_check.py --conduit work-one-todo --max-usage "{{inputs.max_usage}}"
+        python3 {{conduit_dir}}/scripts/usage_check.py --conduit work-one-todo --max-usage "$INPUT_MAX_USAGE"
 
   - generate_ideas:
       description: Generate up to n_ideas ideas into the project's 00_backlog/ folder.
@@ -131,7 +134,7 @@ tasks:
       until: 'output.match(remaining:\s*0)'
       inputs:
         target: "{{inputs.n_ideas}}"
-        prior: "{{loop.previous}}"
+        history: "{{loop.history}}"
         max_usage: "{{inputs.max_usage}}"
         project_document: "{{inputs.project_root}}/.atelier/project/project.md"
         template_dir: "{{conduit_dir}}/references"
@@ -150,7 +153,7 @@ tasks:
       until: 'output.match(remaining:\s*0)'
       inputs:
         target: "{{inputs.n_adhd}}"
-        prior: "{{loop.previous}}"
+        history: "{{loop.history}}"
         max_usage: "{{inputs.max_usage}}"
         project_document: "{{inputs.project_root}}/.atelier/project/project.md"
         template_dir: "{{conduit_dir}}/references"
@@ -169,7 +172,7 @@ tasks:
       until: 'output.match(remaining:\s*0)'
       inputs:
         target: "{{inputs.n_reviews}}"
-        prior: "{{loop.previous}}"
+        history: "{{loop.history}}"
         max_usage: "{{inputs.max_usage}}"
         project_document: "{{inputs.project_root}}/.atelier/project/project.md"
         template_dir: "{{conduit_dir}}/references"
@@ -188,7 +191,7 @@ tasks:
       until: 'output.match(remaining:\s*0|task_counter:\s*0)'
       inputs:
         target: "{{inputs.n_improve}}"
-        prior: "{{loop.previous}}"
+        history: "{{loop.history}}"
         max_usage: "{{inputs.max_usage}}"
         project_document: "{{inputs.project_root}}/.atelier/project/project.md"
         template_dir: "{{conduit_dir}}/references"
@@ -206,7 +209,7 @@ tasks:
       until: 'output.match(remaining:\s*0|task_counter:\s*0)'
       inputs:
         target: "{{inputs.n_todo}}"
-        prior: "{{loop.previous}}"
+        history: "{{loop.history}}"
         max_usage: "{{inputs.max_usage}}"
         project_document: "{{inputs.project_root}}/.atelier/project/project.md"
         project_dir: "{{inputs.project_root}}/.atelier/project"

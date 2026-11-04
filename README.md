@@ -65,6 +65,9 @@ atelier add LGuillermoAngaritaG/autonomous-projects
 atelier list conduits        # confirm autonomous-projects appears
 ```
 
+This package needs a flow-atelier **newer than 0.12.0** (see
+[Install](#install)). Already have 0.12 or older? Run `uv tool upgrade flow-atelier`.
+
 Then install the two skill sets the conduits drive — inside Claude Code:
 
 ```
@@ -134,6 +137,24 @@ sections below.
 ```bash
 uv tool install flow-atelier
 atelier --version
+```
+
+**Version pairing.** This package needs a flow-atelier **newer than 0.12.0**.
+That release gives shell steps their values as environment variables
+(`$INPUT_<NAME>`, `$OUTPUT_<TASK>`), so text from an agent or a failed try can
+never run as a command, and it keeps a loop going after a failed try. On 0.12
+or older the tick stops at once in `dep_guard` with the message `this package
+needs a flow-atelier newer than 0.12.0`, before it writes anything. Upgrade with
+`uv tool upgrade flow-atelier`.
+
+If you must stay on 0.12, install the last version of this package made for it
+(commit `1eef891`). That version pastes values straight into shell commands, so
+an agent's output can run as a command; upgrade when you can.
+
+```bash
+git clone https://github.com/LGuillermoAngaritaG/autonomous-projects.git
+git -C autonomous-projects checkout 1eef891
+atelier add ./autonomous-projects
 ```
 
 **2. Install the agent skills** (one time). The conduits drive
@@ -431,12 +452,20 @@ The atelier engine requires `repeat:` to be a **literal integer** and `until:` a
 high literal `repeat:` safety ceiling (`50`) and a small counter inside the
 sub-conduit stops it at your `n_*`:
 
-- A leading `count` step reads the running tally carried in `{{loop.previous}}`
-  (the previous iteration's output) and, once `n_*` activities have run, emits
+- A leading `count` step reads the running tally from `{{loop.history}}` (the
+  earlier iterations' outputs) and, once `n_*` activities have run, emits
   `remaining: 0` — which trips the branch's `until: output.match(remaining: 0)`
   and gates the activity off.
 - After the activity runs, a trailing `advance` step bumps the tally (`made: K`)
   and recomputes `remaining`, so the next iteration sees the new count.
+
+A failed iteration counts toward the `50` but not toward `n_*`: the engine
+keeps going, and the next `count` skips the failed try and takes the tally from
+the last good one. By default the engine keeps only the last 10 iterations in
+`{{loop.history}}`. When older iterations were dropped and every kept one
+failed, the tally is unknown, so the branch
+stops with `stopped: no count in the loop history` instead of starting again
+from 0. The other branches keep running.
 
 `improve_tasks` and `do_tasks` also stop when their **queue drains** —
 `improve-task` emits `task_counter: 0` when the inbox is empty, `work-one-todo`
@@ -530,7 +559,7 @@ autonomous-projects/
   scripts/
     usage_check.py       single usage gate → ok: true|false (reads the activity's harness, fail-open)
     usage.mjs            reads Claude Code's local 5h-usage data (also Codex/OpenCode)
-    loop_count.py        per-tick counter (made:/remaining: via {{loop.previous}}) + the per-iteration usage re-check
+    loop_count.py        per-tick counter (made:/remaining: via {{loop.history}}) + the per-iteration usage re-check
     require_markers.py   non-fatal gate: did a generation step emit its ===MARKER=== block? stops one branch, not the tick
     remove_picked.py     deletes exactly the inbox file the pick step chose (never a re-glob)
     new_project.py       one-command scaffolder (--repo, atomic)
@@ -558,7 +587,7 @@ step needs neither; its instructions are inline in `generate-idea/conduit.yaml`.
 Every activity runs on Claude Code (`tool: harness:claude-code`, declared
 directly in each sub-conduit). The usage shim, counter, and helper scripts are
 pure and unit-tested; the generation/execution steps drive the AI harness.
-Sub-conduits receive their folder paths and per-tick `target`/`prior` from the
+Sub-conduits receive their folder paths and per-tick `target`/`history` from the
 parent, so the layout is defined in one place (`conduit.yaml`).
 
 All four generation branches gate on `require_markers.py` before storing:

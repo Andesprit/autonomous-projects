@@ -9,7 +9,7 @@ inputs:
   path_task: "Folder where the user drops raw task files to improve (the task inbox)."
   path_backlog: "Target folder where the improved task_*.md documents are written."
   target: "How many tasks the parent wants spec'd this tick (the n_improve count)."
-  prior: "The previous iteration's counter output ({{loop.previous}}); empty on iteration 1."
+  history: "The parent loop's earlier tries ({{loop.history}}); empty on iteration 1."
   max_usage: {default: "80"}   # usage ceiling %; the per-iteration re-check stops the loop when the harness is at/over it
 
 tasks:
@@ -19,8 +19,8 @@ tasks:
       depends_on: []
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
-          --phase count --target "{{inputs.target}}" --prior "{{inputs.prior}}" \
-          --conduit improve-task --max-usage "{{inputs.max_usage}}"
+          --phase count --target "$INPUT_TARGET" --history-file "$INPUT_HISTORY_FILE" \
+          --conduit improve-task --max-usage "$INPUT_MAX_USAGE"
 
   - pick_path:
       description: >
@@ -35,7 +35,7 @@ tasks:
         - 'count.output.not_match(remaining:\s*0)'
       task: |
         set -euo pipefail
-        f="$(find "{{inputs.path_task}}" -maxdepth 1 -type f -name '*.md' | sort | head -n1)"
+        f="$(find "$INPUT_PATH_TASK" -maxdepth 1 -type f -name '*.md' | sort | head -n1)"
         if [ -n "$f" ]; then
           printf '%s\n' "$(cd "$(dirname "$f")" && pwd)/$(basename "$f")"
         fi
@@ -46,12 +46,12 @@ tasks:
       depends_on: [pick_path]
       task: |
         set -euo pipefail
-        # Take line 1 only: engine interpolation may carry a trailing newline.
-        f="{{pick_path.output}}"
+        # Take line 1 only: the output keeps pick_path's trailing newline.
+        f="$OUTPUT_PICK_PATH"
         f="${f%%$'\n'*}"
         if [ -z "$f" ]; then
           printf 'NOTHING TO SPEC\n'
-          python3 "{{conduit_dir}}/../autonomous-projects/scripts/count_tasks.py" "{{inputs.path_task}}"
+          python3 "{{conduit_dir}}/../autonomous-projects/scripts/count_tasks.py" "$INPUT_PATH_TASK"
           exit 0
         fi
         printf '%s\n' "$f"
@@ -121,18 +121,10 @@ tasks:
       tool: tool:bash
       depends_on: [improve_task]
       task: |
-        # The heredoc must NOT sit inside a $( ): bash's scanner tracks quotes
-        # through it, so one apostrophe in the model's prose ("doesn't") breaks
-        # the parse. The blank line before the terminator keeps it on its own
-        # line even though the harness output has no trailing newline.
-        # ponytail: a quoted heredoc is the safest primitive available for piping
-        # model text through bash, but a payload line equal to the terminator
-        # would still close it early — hence a terminator no prose would emit.
+        # The agent's text comes from its file, never pasted into the
+        # script, so nothing in it can run as a command.
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/require_markers.py" \
-          --kind TASK <<'__ATELIER_PAYLOAD_EOF__'
-        {{improve_task.output}}
-
-        __ATELIER_PAYLOAD_EOF__
+          --kind TASK < "$OUTPUT_IMPROVE_TASK_FILE"
 
   - generate_plan:
       description: Produce a plan for the generated task, inline only.
@@ -244,7 +236,7 @@ tasks:
       task: |
         set -euo pipefail
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/remove_picked.py" \
-          --inbox "{{inputs.path_task}}" "{{pick_path.output}}"
+          --inbox "$INPUT_PATH_TASK" "$OUTPUT_PICK_PATH"
 
   - advance:
       description: "Advance the per-tick counter (made: N) so the parent loop stops at target."
@@ -252,7 +244,7 @@ tasks:
       depends_on: [store_task]
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
-          --phase advance --target "{{inputs.target}}" --prior "{{inputs.prior}}"
+          --phase advance --target "$INPUT_TARGET" --history-file "$INPUT_HISTORY_FILE"
 
   - count_inbox:
       description: "Count .md tasks still in the inbox after this run and emit 'task_counter: N' so the parent loop also stops when the inbox drains."
@@ -260,4 +252,4 @@ tasks:
       depends_on: [remove_source]
       task: |
         set -euo pipefail
-        python3 "{{conduit_dir}}/../autonomous-projects/scripts/count_tasks.py" "{{inputs.path_task}}"
+        python3 "{{conduit_dir}}/../autonomous-projects/scripts/count_tasks.py" "$INPUT_PATH_TASK"
