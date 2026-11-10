@@ -14,7 +14,7 @@ inputs:
   project_dir: "Path to the project folder holding the numbered stage subfolders."
   project_root: "Path to the target repo (the codebase) the worker edits."
   target: "How many to-do tasks the parent wants advanced this tick (the n_todo count)."
-  prior: "The previous iteration's counter output ({{loop.previous}}); empty on iteration 1."
+  history: "The parent loop's earlier tries ({{loop.history}}); empty on iteration 1."
   max_usage: {default: "80"}   # usage ceiling %; the per-iteration re-check stops the loop when the harness is at/over it
 
 tasks:
@@ -24,8 +24,8 @@ tasks:
       depends_on: []
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
-          --phase count --target "{{inputs.target}}" --prior "{{inputs.prior}}" \
-          --conduit work-one-todo --max-usage "{{inputs.max_usage}}"
+          --phase count --target "$INPUT_TARGET" --history-file "$INPUT_HISTORY_FILE" \
+          --conduit work-one-todo --max-usage "$INPUT_MAX_USAGE"
 
   - pick:
       description: "Emit the highest-priority to-do filename (priority asc, name asc)."
@@ -33,7 +33,7 @@ tasks:
       depends_on:
         - 'count.output.not_match(remaining:\s*0)'
       task: |
-        python3 "{{conduit_dir}}/scripts/pick_next_task.py" "{{inputs.project_dir}}"
+        python3 "{{conduit_dir}}/scripts/pick_next_task.py" "$INPUT_PROJECT_DIR"
 
   - advance:
       description: Advance the highest-priority to-do task, looping until a DONE verdict.
@@ -131,7 +131,7 @@ tasks:
       depends_on:
         - 'advance.output.match(VERDICT:\s*DONE)'
       task: |
-        python3 "{{conduit_dir}}/scripts/promote_reviewed.py" "{{inputs.project_dir}}"
+        python3 "{{conduit_dir}}/scripts/promote_reviewed.py" "$INPUT_PROJECT_DIR"
 
   - block_stranded:
       description: >
@@ -143,7 +143,7 @@ tasks:
       depends_on:
         - 'advance.output.not_match(VERDICT:\s*DONE)'
       task: |
-        python3 "{{conduit_dir}}/../autonomous-projects/scripts/block_stranded.py" "{{inputs.project_dir}}"
+        python3 "{{conduit_dir}}/../autonomous-projects/scripts/block_stranded.py" "$INPUT_PROJECT_DIR"
 
   - bump:
       description: "Advance the per-tick counter (made: N) so the parent loop stops at target."
@@ -151,11 +151,11 @@ tasks:
       depends_on: [advance]
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
-          --phase advance --target "{{inputs.target}}" --prior "{{inputs.prior}}"
+          --phase advance --target "$INPUT_TARGET" --history-file "$INPUT_HISTORY_FILE"
 
   - count_todo:
       description: "Emit 'task_counter: N' (.md files still in 01_to-do) so the parent loop also stops when the queue drains."
       tool: tool:bash
       depends_on: [advance]
       task: |
-        python3 "{{conduit_dir}}/../autonomous-projects/scripts/count_tasks.py" "{{inputs.project_dir}}/01_to-do"
+        python3 "{{conduit_dir}}/../autonomous-projects/scripts/count_tasks.py" "$INPUT_PROJECT_DIR/01_to-do"
