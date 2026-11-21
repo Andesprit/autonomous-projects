@@ -22,234 +22,64 @@ tasks:
           --phase count --target "$INPUT_TARGET" --history-file "$INPUT_HISTORY_FILE" \
           --conduit improve-task --max-usage "$INPUT_MAX_USAGE"
 
-  - pick_path:
-      description: >
-        Deterministically choose ONE .md from the inbox and emit only its
-        absolute path (nothing when the inbox is drained). Kept separate from
-        pick_task so remove_source can delete exactly this file: re-globbing at
-        delete time raced a task dropped during the AI steps and deleted that
-        one instead. Emitting the bare path (not the file contents) is also what
-        keeps raw user text out of the later bash steps.
+  - pick_task:
+      description: "Pick the first inbox Markdown file and capture its identity and original text."
       tool: tool:bash
       depends_on:
         - 'count.output.not_match(remaining:\s*0)'
       task: |
-        set -euo pipefail
-        f="$(find "$INPUT_PATH_TASK" -maxdepth 1 -type f -name '*.md' | sort | head -n1)"
-        if [ -n "$f" ]; then
-          printf '%s\n' "$(cd "$(dirname "$f")" && pwd)/$(basename "$f")"
-        fi
-
-  - pick_task:
-      description: "Emit the picked file's absolute path on line 1, then the raw file contents."
-      tool: tool:bash
-      depends_on: [pick_path]
-      task: |
-        set -euo pipefail
-        # Take line 1 only: the output keeps pick_path's trailing newline.
-        f="$OUTPUT_PICK_PATH"
-        f="${f%%$'\n'*}"
-        if [ -z "$f" ]; then
-          printf 'NOTHING TO SPEC\n'
-          python3 "{{conduit_dir}}/../autonomous-projects/scripts/count_tasks.py" "$INPUT_PATH_TASK"
-          exit 0
-        fi
-        printf '%s\n' "$f"
-        cat "$f"
+        python3 "{{conduit_dir}}/../autonomous-projects/scripts/store_improved_task.py" pick "$INPUT_PATH_TASK"
 
   - improve_task:
-      description: Improve a task provided by the user.
+      description: Produce the spec and implementation plan for one raw task.
       tool: harness:claude-code
+      permissions: read-only
       depends_on:
-        - 'pick_task.output.not_match(NOTHING TO SPEC)'
+        - 'pick_task.output.match(^picked: )'
       retries: 2
       retry_backoff: 5
       task: |
-        /agent-skills:spec
+        Use /agent-skills:spec and /agent-skills:plan in this single response.
+        Read {{inputs.project_document}} for the project's goal, constraints,
+        and codebase location. Inspect that codebase and preserve the user's intent.
+        Work unattended, record open questions in the spec, and write all results
+        inline. The first line below identifies the input. The rest is the raw task.
 
-        This run is unattended: NEVER ask a clarifying question and never wait
-        for confirmation — make reasonable assumptions from the project
-        document and the codebase, and record any open question inside the
-        spec text itself. Write NO files: do not create `SPEC.md`,
-        `docs/SPEC.md`, or anything under `spec/`. The spec goes between the
-        markers below and nowhere else; the conduit stores it.
-
-        Read this project document first to understand the project's goal and
-        constraints, and ground your improvements in it:
-        {{inputs.project_document}}
-
-        Then focus on the codebase at the path outlined in the project document.
-
-        Your job is to improve the raw task below without changing its core
-        meaning or intent. The block comes from {{pick_task.output}}: its FIRST
-        line is the file's path (ignore it) and everything AFTER the first line
-        is the original task text to improve.
-
-        Raw task:
-        ---
         {{pick_task.output}}
-        ---
 
-        Generate an improved version of that task.
+        Return one nonempty spec and one actionable plan. Use the exact marker
+        lines below and a lowercase kebab-case slug. Use ## for section headings.
 
-        Produce exactly ONE improved version of the task.
-
-        Output format (strict):
-        - Do all exploration and reasoning first; NONE of that narration may
-          appear in the final output.
-        - Emit the improved task between the two marker lines below, on their
-          own lines, with ONLY the improved task content in between:
-
-          ===TASK START===
-          ===TASK END===
-
-        - After the END marker, output one final line naming the task
-          (lowercase, kebab-case, no spaces):
-
-          TASK_SLUG: <kebab-case-name>
-
-  - require_task:
-      description: >
-        Say out loud whether improve_task honoured its ===TASK=== output
-        contract. This branch is the one that DELETES user data — remove_source
-        drops the raw inbox file once the card is stored — so a spec step that
-        ended its turn early would otherwise store a card assembled from
-        narration and destroy the original anyway. On a miss it emits
-        `remaining: 0`, which stops THIS branch (before store_task, and so
-        before remove_source) and leaves the sibling branches running — the
-        engine is fail-fast, so failing here would cancel them.
-      tool: tool:bash
-      depends_on: [improve_task]
-      task: |
-        # The agent's text comes from its file, never pasted into the
-        # script, so nothing in it can run as a command.
-        python3 "{{conduit_dir}}/../autonomous-projects/scripts/require_markers.py" \
-          --kind TASK < "$OUTPUT_IMPROVE_TASK_FILE"
-
-  - generate_plan:
-      description: Produce a plan for the generated task, inline only.
-      tool: harness:claude-code
-      depends_on:
-        - 'require_task.output.match(ok:\s*true)'
-      retries: 2
-      retry_backoff: 5
-      task: |
-        /agent-skills:plan
-
-        Plan against the codebase that holds this project document —
-        {{inputs.project_document}} — that is, the repo containing its
-        `.atelier/project/` folder. Read the document first for the goal and
-        the binding constraints. Do NOT plan against the current working
-        directory: the tick may have been launched from anywhere.
-
-        Create a plan for the following task (use only the text between the
-        "===TASK START===" / "===TASK END===" markers; ignore everything else):
-
-        ---
-        {{improve_task.output}}
-        ---
-
-        IMPORTANT: Output the full plan inline in your response only. Do NOT write
-        the plan to any file on disk — no `tasks/plan.md`, no `tasks/todo.md`,
-        no file of any other name. The conduit stores the plan itself.
-
-        Output format (strict):
-        - Do all reasoning first; NONE of that narration may appear in the plan.
-        - Emit the plan between the two marker lines below, with ONLY the plan in
-          between (no preamble, no narration). Do not put a top-level "# Plan"
-          heading inside; use "##" for any section headings:
-          ===PLAN START===
-          ===PLAN END===
+        ===TASK START===
+        <spec>
+        ===TASK END===
+        ===PLAN START===
+        <plan>
+        ===PLAN END===
+        TASK_SLUG: <kebab-case-name>
 
   - store_task:
-      description: Assemble the task document from the template and write it to path_backlog.
-      tool: harness:claude-code
-      depends_on: [pick_task, improve_task, generate_plan]
-      retries: 2
-      retry_backoff: 5
-      task: |
-        Create one task document and write it to disk.
-
-        The original raw task is in {{pick_task.output}}: its FIRST line is the
-        absolute path of the source file in the inbox, and everything AFTER the
-        first line is the user's original task text, verbatim.
-
-        1. Read the template at:
-           {{inputs.template_dir}}/task_template.md
-           Fill the sections present in that template — it is the single source
-           of truth for the section set (not re-listed here).
-
-        2. Fill the sections:
-           - "# Description": the user's original task text, verbatim — that is
-             everything AFTER the first line of {{pick_task.output}}. Copy it as
-             written; do NOT reconstruct it from the improved spec.
-           - "# Spec": ONLY the text between the "===TASK START===" and
-             "===TASK END===" markers in the task below. Strip a leading
-             top-level "# ..." heading if present (the template already
-             provides "# Spec"), and demote any other top-level "# " headings
-             inside it to "## " so they don't read as document sections —
-             but ONLY outside fenced code blocks: a "#" starting a line
-             inside ``` fences is a code comment, leave it exactly as is.
-             Discard everything outside the markers (model narration, the
-             markers themselves, and the TASK_SLUG line).
-           - "# Plan": ONLY the text between the "===PLAN START===" and
-             "===PLAN END===" markers in the plan below. Strip a leading
-             top-level "# ..." heading if present (the template already provides
-             "# Plan"). Discard everything outside the markers.
-           - Leave "# User comments", "# What was done", and
-             "# How was done and tested" empty.
-           - Frontmatter: set `priority: 1` (tasks are highest precedence).
-             Set `creation_datetime` to the output of
-             `date '+%Y-%m-%d %H:%M:%S %Z'`. Leave `modified_datetime` and
-             `commits` blank — the human and the executor fill those later.
-
-        3. Determine the slug from the "TASK_SLUG:" line in the task below.
-
-        4. Run: mkdir -p "{{inputs.path_backlog}}"
-           Then write the filled document to:
-           {{inputs.path_backlog}}/task_<slug>.md
-           (literal prefix "task_" followed by the slug, e.g. task_dark-mode.md).
-           If that filename already exists, do NOT overwrite it — it is an
-           untriaged proposal the human has not seen yet. Append the lowest free
-           numeric suffix instead: task_<slug>.2.md, then .3.md, and so on.
-           A later automated step removes the source inbox file — do not delete
-           it here.
-
-        Task:
-        ---
-        {{improve_task.output}}
-        ---
-
-        Plan:
-        ---
-        {{generate_plan.output}}
-        ---
-
-  - remove_source:
-      description: >
-        Delete the raw inbox file just spec'd — the exact file pick_path chose,
-        never a fresh glob. Re-globbing here deleted whatever sorted first at
-        delete time, so a task dropped into the inbox during the AI steps was
-        destroyed unread while the spec'd one stayed for another pass.
+      description: "Publish and verify the card before removing the unchanged inbox file."
       tool: tool:bash
-      depends_on: [store_task]
+      depends_on: [pick_task, improve_task]
       task: |
-        set -euo pipefail
-        python3 "{{conduit_dir}}/../autonomous-projects/scripts/remove_picked.py" \
-          --inbox "$INPUT_PATH_TASK" "$OUTPUT_PICK_PATH"
+        python3 "{{conduit_dir}}/../autonomous-projects/scripts/store_improved_task.py" store \
+          "$INPUT_PATH_TASK" "$INPUT_PATH_BACKLOG" "$INPUT_TEMPLATE_DIR/task_template.md" \
+          "$OUTPUT_PICK_TASK_FILE" < "$OUTPUT_IMPROVE_TASK_FILE"
 
   - advance:
-      description: "Advance the per-tick counter (made: N) so the parent loop stops at target."
+      description: "Count the stored task toward the per-tick target."
       tool: tool:bash
-      depends_on: [store_task]
+      depends_on:
+        - 'store_task.output.match(^stored: true)'
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
           --phase advance --target "$INPUT_TARGET" --history-file "$INPUT_HISTORY_FILE"
 
   - count_inbox:
-      description: "Count .md tasks still in the inbox after this run and emit 'task_counter: N' so the parent loop also stops when the inbox drains."
+      description: "Stop the parent loop when the successful store drains the inbox."
       tool: tool:bash
-      depends_on: [remove_source]
+      depends_on:
+        - 'store_task.output.match(^stored: true)'
       task: |
-        set -euo pipefail
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/count_tasks.py" "$INPUT_PATH_TASK"
