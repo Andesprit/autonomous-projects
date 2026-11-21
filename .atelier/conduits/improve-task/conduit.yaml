@@ -9,7 +9,7 @@ inputs:
   path_task: "Folder where the user drops raw task files to improve (the task inbox)."
   path_backlog: "Target folder where the improved task_*.md documents are written."
   target: "How many tasks the parent wants spec'd this tick (the n_improve count)."
-  prior: "The previous iteration's counter output ({{loop.previous}}); empty on iteration 1."
+  history: "The parent loop's earlier tries ({{loop.history}}); empty on iteration 1."
   max_usage: {default: "80"}   # usage ceiling %; the per-iteration re-check stops the loop when the harness is at/over it
 
 tasks:
@@ -19,7 +19,7 @@ tasks:
       depends_on: []
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
-          --phase count --target "$INPUT_TARGET" --prior "$INPUT_PRIOR" \
+          --phase count --target "$INPUT_TARGET" --history-file "$INPUT_HISTORY_FILE" \
           --conduit improve-task --max-usage "$INPUT_MAX_USAGE"
 
   - pick_task:
@@ -74,7 +74,7 @@ tasks:
         - 'store_task.output.match(^stored: true)'
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
-          --phase advance --target "$INPUT_TARGET" --prior "$INPUT_PRIOR"
+          --phase advance --target "$INPUT_TARGET" --history-file "$INPUT_HISTORY_FILE"
 
   - count_inbox:
       description: "Stop the parent loop when the successful store drains the inbox."

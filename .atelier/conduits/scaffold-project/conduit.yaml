@@ -13,7 +13,10 @@ tasks:
       depends_on: []
       task: |
         set -euo pipefail
+        # $INPUT_* exists only in a flow-atelier newer than 0.12.0; an older one
+        # would leave --repo empty and scaffold the current folder instead.
+        : "${INPUT_PROJECT_ROOT_FILE:?this package needs a flow-atelier newer than 0.12.0}"
         # Delegate to the tested scaffolder shipped with autonomous-projects
         # (sibling conduit in this package). Pure stdlib -> plain python3, no uv.
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/new_project.py" \
-          --repo "{{inputs.project_root}}"
+          --repo "$INPUT_PROJECT_ROOT"

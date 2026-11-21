@@ -1,18 +1,23 @@
-"""Per-tick activity counter: rides {{loop.previous}} to stop a loop at N.
+"""Per-tick activity counter: rides {{loop.history}} to stop a loop at N.
 
 The engine's `repeat:` is a static int and `until:` a regex parsed once, so a
 runtime per-tick count can't live on either. Instead each activity loops to a
 high literal `repeat:` ceiling and this counter trips the static
 `until: output.match(remaining:\\s*0)` once `target` activities have run.
 
-`prior` is the previous iteration's sink output (carried by {{loop.previous}},
-empty on iteration 1); `target` is the activity's n_* input.
+`history` is the parent loop's {{loop.history}} (empty on iteration 1), read
+from the file at "$INPUT_HISTORY_FILE"; `target` is the activity's n_* input.
+It is the history, not {{loop.previous}}, because a try that fails counts as a
+try: its {{loop.previous}} is the raw error text, with no `made:` in it, and
+the count would restart from 0. So the count is the last `made: N` of a try
+that did not fail.
 
 Phases (always exit 0):
     --phase count    (leading, gates the activity)
-        done = made-so-far parsed from prior.
+        done = made-so-far parsed from history.
         done >= target -> "made: <done>\\nremaining: 0"  (skip + stop signal)
         else           -> "made: <done>"
+        unknown        -> "remaining: 0\\nstopped: ..."  (see made_so_far)
     --phase advance  (trailing, after the activity ran)
         "made: <done+1>\\nremaining: <max(target-done-1, 0)>"
 
@@ -24,7 +29,7 @@ branch at the first iteration that is at/over the ceiling, and it stays
 fail-open (an unreadable usage or unknown harness never blocks work).
 
 The advance task must be the sub-conduit's sink so its `made:` rides forward in
-{{loop.previous}}. The count early-skip is a belt-and-suspenders stop if a
+{{loop.history}}. The count early-skip is a belt-and-suspenders stop if a
 round-trip ever drops the counter.
 """
 
@@ -36,6 +41,13 @@ import sys
 from pathlib import Path
 
 _MADE_RE = re.compile(r"made:\s*(\d+)")
+# How the engine renders {{loop.history}}: one "--- iteration K ---" block per
+# try, after an "--- N earlier iterations omitted ---" line once it keeps only
+# the newest tries (10 by default). A failed try's block starts with the line
+# "[this try failed with exit code N]".
+_ITERATION_RE = re.compile(r"^--- iteration \d+ ---$", re.MULTILINE)
+_OMITTED_RE = re.compile(r"^--- \d+ earlier iterations omitted ---$", re.MULTILINE)
+_FAILED_TRY = "[this try failed with exit code"
 
 
 def parse_made(prior: str) -> int:
@@ -44,15 +56,37 @@ def parse_made(prior: str) -> int:
     return int(matches[-1]) if matches else 0
 
 
-def count_phase(prior: str, target: int, usage_ok: bool = True) -> str:
+def made_so_far(history: str) -> int | None:
+    """The count carried by the newest try in *history* that did not fail.
+
+    A failed try is skipped: its text is whatever the command or agent printed,
+    so it has no counter, and a `made:` inside it is not one. Text with no
+    iteration blocks is read as a single try.
+
+    :param history: the rendered {{loop.history}}; empty before the first try.
+    :returns: the count, or None when the engine left older tries out and none
+        of the tries it kept carries a count. The count is then unknown, and
+        guessing 0 would make the activity run up to `target` more times.
+    """
+    parts = _ITERATION_RE.split(history or "")
+    head, tries = (parts[0], parts[1:]) if len(parts) > 1 else ("", parts)
+    good = "\n".join(t for t in tries if not t.lstrip().startswith(_FAILED_TRY))
+    if not _MADE_RE.search(good) and _OMITTED_RE.search(head):
+        return None
+    return parse_made(good)
+
+
+def count_phase(history: str, target: int, usage_ok: bool = True) -> str:
     """Leading gate output: emit remaining: 0 once the target is reached.
 
-    :param prior: previous iteration's carried counter output.
+    :param history: the parent loop's {{loop.history}}.
     :param target: this activity's n_* count for the tick.
     :param usage_ok: False when the harness is at/over the usage ceiling — the
         branch stops here rather than spending the rest of its iterations.
     """
-    done = parse_made(prior)
+    done = made_so_far(history)
+    if done is None:
+        return "remaining: 0\nstopped: no count in the loop history, its last tries all failed"
     if not usage_ok:
         return f"made: {done}\nremaining: 0\nstopped: usage ceiling reached"
     if done >= target:
@@ -81,16 +115,20 @@ def usage_ok(conduit: str | None, max_usage: str | None) -> bool:
     return is_ok(resolve_harness(conduit, conduits_dir), read_usage(), ceiling)
 
 
-def advance_phase(prior: str, target: int) -> str:
+def advance_phase(history: str, target: int) -> str:
     """Trailing counter output after the activity ran this iteration."""
-    done = parse_made(prior)
+    done = made_so_far(history) or 0
     return f"made: {done + 1}\nremaining: {max(target - done - 1, 0)}"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--phase", choices=("count", "advance"), required=True)
-    parser.add_argument("--prior", default="")
+    parser.add_argument(
+        "--history-file",
+        required=True,
+        help='File holding the loop history: "$INPUT_HISTORY_FILE".',
+    )
     parser.add_argument("--target", type=int, required=True)
     parser.add_argument(
         "--conduit",
@@ -102,12 +140,19 @@ def main() -> int:
         default=None,
         help="Usage ceiling %% for the re-check; omit to skip it.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if not args.history_file:
+        # flow-atelier 0.12 and older set no $INPUT_* variable in shell steps.
+        parser.error(
+            "--history-file is empty: this package needs a flow-atelier newer "
+            "than 0.12.0, which gives shell steps their values as $INPUT_* variables"
+        )
+    history = Path(args.history_file).read_text(encoding="utf-8", errors="replace")
 
     if args.phase == "count":
-        print(count_phase(args.prior, args.target, usage_ok(args.conduit, args.max_usage)))
+        print(count_phase(history, args.target, usage_ok(args.conduit, args.max_usage)))
     else:
-        print(advance_phase(args.prior, args.target))
+        print(advance_phase(history, args.target))
     return 0
 
 

@@ -10,7 +10,7 @@ inputs:
   bad_ideas: "Folder of rejected-idea files the agent must read to avoid re-proposing them."
   tasks_dir: "Project root whose 01_to-do/02_in-progress/03_to-review/04_done subfolders the agent reads for prior work."
   target: "How many ideas the parent wants this tick (the n_ideas count)."
-  prior: "The previous iteration's counter output ({{loop.previous}}); empty on iteration 1."
+  history: "The parent loop's earlier tries ({{loop.history}}); empty on iteration 1."
   max_usage: {default: "80"}   # usage ceiling %; the per-iteration re-check stops the loop when the harness is at/over it
 
 tasks:
@@ -20,8 +20,8 @@ tasks:
       depends_on: []
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
-          --phase count --target "{{inputs.target}}" --prior "{{inputs.prior}}" \
-          --conduit generate-idea --max-usage "{{inputs.max_usage}}"
+          --phase count --target "$INPUT_TARGET" --history-file "$INPUT_HISTORY_FILE" \
+          --conduit generate-idea --max-usage "$INPUT_MAX_USAGE"
 
   - generate_idea:
       description: Generate one concrete idea for the project.
@@ -117,18 +117,10 @@ tasks:
       tool: tool:bash
       depends_on: [generate_idea]
       task: |
-        # The heredoc must NOT sit inside a $( ): bash's scanner tracks quotes
-        # through it, so one apostrophe in the model's prose ("doesn't") breaks
-        # the parse. The blank line before the terminator keeps it on its own
-        # line even though the harness output has no trailing newline.
-        # ponytail: a quoted heredoc is the safest primitive available for piping
-        # model text through bash, but a payload line equal to the terminator
-        # would still close it early — hence a terminator no prose would emit.
+        # The agent's text comes from its file, never pasted into the
+        # script, so nothing in it can run as a command.
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/require_markers.py" \
-          --kind IDEA <<'__ATELIER_PAYLOAD_EOF__'
-        {{generate_idea.output}}
-
-        __ATELIER_PAYLOAD_EOF__
+          --kind IDEA < "$OUTPUT_GENERATE_IDEA_FILE"
 
   - generate_plan:
       description: Produce a plan for the generated idea, inline only.
@@ -226,4 +218,4 @@ tasks:
       depends_on: [store_idea]
       task: |
         python3 "{{conduit_dir}}/../autonomous-projects/scripts/loop_count.py" \
-          --phase advance --target "{{inputs.target}}" --prior "{{inputs.prior}}"
+          --phase advance --target "$INPUT_TARGET" --history-file "$INPUT_HISTORY_FILE"
