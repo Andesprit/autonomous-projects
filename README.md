@@ -534,7 +534,7 @@ autonomous-projects/
     store_improved_task.py  picks the raw input, validates the response, publishes and verifies the card
     new_project.py       one-command scaffolder (--repo, atomic)
     tick_lock.py         single-flight OS lock wrapper
-    tests/               loop_count, usage_check, require_markers, store_improved_task, remove_picked, new_project,
+    tests/               loop_count, usage_check, require_markers, store_improved_task, new_project,
                          tick_lock, count_tasks, block_stranded, pick_next_task, promote_reviewed
   references/
     project_template.md  the project.md starter
