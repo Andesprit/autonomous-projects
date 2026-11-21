@@ -292,11 +292,10 @@ The flow is half bot, half you:
   prefix is the only difference between the two kinds of idea — same template,
   same `priority: 3`, same triage — so you can tell at a glance which came out
   of the expensive divergent pass.
-- **You feed raw tasks** → `00_tasks/`. Drop a rough one-line task; the bot runs
-  `/agent-skills:spec` + `/agent-skills:plan` on it and writes a polished
-  `task_*.md` into `00_backlog`
-  (carrying your original wording verbatim into `# Description`), then deletes
-  the raw file.
+- **You feed raw tasks** → `00_tasks/`. One agent uses `/agent-skills:spec` and
+  `/agent-skills:plan` to draft each card. A script copies your original wording
+  into `# Description`, writes the priority-1 card to `00_backlog/`, and reads
+  it back. Only then does it remove the picked file, after checking for edits.
 - **You triage** `00_backlog/`: move good proposals to `01_to-do/`, bad ones to
   `00_abandoned/`. Leave your reasoning in the abandoned file — it steers future
   proposals away from that kind.
@@ -532,10 +531,10 @@ autonomous-projects/
     usage.mjs            reads Claude Code's local 5h-usage data (also Codex/OpenCode)
     loop_count.py        per-tick counter (made:/remaining: via {{loop.previous}}) + the per-iteration usage re-check
     require_markers.py   non-fatal gate: did a generation step emit its ===MARKER=== block? stops one branch, not the tick
-    remove_picked.py     deletes exactly the inbox file the pick step chose (never a re-glob)
+    store_improved_task.py  picks the raw input, validates the response, publishes and verifies the card
     new_project.py       one-command scaffolder (--repo, atomic)
     tick_lock.py         single-flight OS lock wrapper
-    tests/               loop_count, usage_check, require_markers, remove_picked, new_project,
+    tests/               loop_count, usage_check, require_markers, store_improved_task, remove_picked, new_project,
                          tick_lock, count_tasks, block_stranded, pick_next_task, promote_reviewed
   references/
     project_template.md  the project.md starter
@@ -561,13 +560,13 @@ pure and unit-tested; the generation/execution steps drive the AI harness.
 Sub-conduits receive their folder paths and per-tick `target`/`prior` from the
 parent, so the layout is defined in one place (`conduit.yaml`).
 
-All four generation branches gate on `require_markers.py` before storing:
-`generate_idea`, `diverge` (adhd), `generate_review` and `improve_task` each
-have to produce their `===…START===`/`===…END===` block, or the branch stops
-with `remaining: 0` and stores nothing. A step that ends its turn early would
-otherwise have its narration assembled into a proposal document — and in
-`improve-task`, which deletes the raw inbox file once the card is stored, that
-would destroy the original task on the way out.
+The idea and review branches use `require_markers.py` to check their generated
+blocks. For an inbox task, `store_improved_task.py` checks both the spec and
+plan markers and the filename slug. Invalid output or a failed write stops
+just this branch with `remaining: 0` and preserves the inbox file. When two
+inputs produce the same slug, the second card gets the lowest free suffix
+(`.2.md`, `.3.md`, …). A frontmatter comment identifies the picked input and
+records the card checksum so a retry after publication can verify and reuse it.
 
 ### Running the tests
 
